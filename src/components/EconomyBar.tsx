@@ -2,6 +2,7 @@ import { animate, motion, useMotionValue, useTransform } from "framer-motion";
 import { useEffect } from "react";
 import { DollarSign, Boxes, Users, TrendingUp, Zap, Star, Wallet } from "lucide-react";
 import { useGameState } from "@/lib/game-state";
+import { formatMillions, getStrategyLabel, INTERVENTION_LIBRARY } from "@/lib/scenario";
 
 interface StatProps {
   icon: React.ReactNode;
@@ -75,13 +76,17 @@ function formatCurrency(n: number) {
 }
 
 export default function EconomyBar() {
-  const { state } = useGameState();
+  const { state, currentScenario, bestScenario } = useGameState();
   const totalWorkers = state.buildings.reduce((s, b) => s + b.workers, 0);
   const totalCapacity = state.buildings.reduce((s, b) => s + b.workersCapacity, 0);
   const laborUtil = totalCapacity > 0 ? totalWorkers / totalCapacity : 0;
 
   const netPerHr = state.revenuePerHr - state.upkeepPerHr;
   const cashTone = state.cash > 10_000_000 ? "green" : state.cash > 2_000_000 ? "amber" : "danger";
+  const projectedPlanCost = currentScenario.enabledInterventions.reduce((sum, type) => {
+    const intervention = INTERVENTION_LIBRARY.find((item) => item.type === type);
+    return sum + (intervention?.estimatedCost ?? 0);
+  }, 0);
 
   return (
     <div
@@ -98,49 +103,52 @@ export default function EconomyBar() {
       />
       <Stat
         icon={<DollarSign size={14} strokeWidth={2.2} />}
-        label="REV / HR"
-        value={state.revenuePerHr}
-        format={formatCurrency}
-        sub={`upkeep ${formatCurrency(state.upkeepPerHr)}`}
-        tone="green"
+        label="REV IMPACT"
+        value={currentScenario.outcome.revenueDelta}
+        format={formatMillions}
+        sub={getStrategyLabel(currentScenario.mode)}
+        tone={currentScenario.outcome.revenueDelta > -7_000_000 ? "green" : "danger"}
       />
       <Stat
         icon={<Boxes size={14} strokeWidth={2.2} />}
-        label="INVENTORY · FIN"
-        value={state.finishedInventory}
-        format={(n) => `${Math.round(n).toLocaleString()}u`}
-        sub={`wip ${Math.round(state.wipInventory)} · raw ${Math.round(state.rawInventory)}t`}
-        pct={state.finishedInventory / state.finishedCapacity}
-        tone={state.finishedInventory / state.finishedCapacity > 0.9 ? "amber" : "green"}
+        label="SERVICE"
+        value={currentScenario.outcome.serviceLevelPct}
+        format={(n) => `${n.toFixed(1)}%`}
+        sub={`best ${bestScenario.outcome.serviceLevelPct.toFixed(1)}%`}
+        pct={currentScenario.outcome.serviceLevelPct / 100}
+        tone={currentScenario.outcome.serviceLevelPct > 90 ? "green" : "amber"}
       />
       <Stat
         icon={<Users size={14} strokeWidth={2.2} />}
         label="LABOR"
         value={totalWorkers}
         format={(n) => Math.round(n).toLocaleString()}
-        sub={`of ${totalCapacity.toLocaleString()}`}
+        sub={`${state.assumptions.laborAvailabilityPct}% available`}
         pct={laborUtil}
         tone="green"
       />
       <Stat
         icon={<TrendingUp size={14} strokeWidth={2.2} />}
-        label="NET / HR"
-        value={netPerHr}
-        format={formatCurrency}
-        tone={netPerHr >= 0 ? "green" : "danger"}
+        label="RECOVERY"
+        value={currentScenario.outcome.recoveryDays}
+        format={(n) => `${n.toFixed(1)}d`}
+        sub={`${currentScenario.enabledInterventions.length} actions`}
+        tone={currentScenario.outcome.recoveryDays <= 12 ? "green" : "amber"}
       />
       <Stat
         icon={<Zap size={14} strokeWidth={2.2} />}
-        label="ENERGY"
-        value={state.energyKwh}
-        format={(n) => `${(n / 1000).toFixed(0)} MWh`}
-        tone="amber"
+        label="PLAN COST"
+        value={projectedPlanCost}
+        format={formatCurrency}
+        sub={`freight ${formatCurrency(currentScenario.outcome.expediteCost)}`}
+        tone={projectedPlanCost > 900_000 ? "amber" : "green"}
       />
       <Stat
         icon={<Star size={14} strokeWidth={2.2} />}
-        label="REPUTATION"
+        label="NETWORK"
         value={state.reputation}
-        format={(n) => `${n.toFixed(2)}/5`}
+        format={() => `${Math.round(currentScenario.outcome.confidencePct)}% conf`}
+        sub={`wip ${Math.round(state.wipInventory)} · raw ${Math.round(state.rawInventory)}t`}
         pct={state.reputation / 5}
         tone="green"
       />

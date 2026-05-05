@@ -142,6 +142,10 @@ export function formatMillions(value: number) {
   return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
 }
 
+export function formatDeltaPct(value: number) {
+  return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
+
 export function getChangedAssumptions(assumptions: ScenarioAssumptions) {
   const changes: string[] = [];
   if (assumptions.outageDurationDays !== BASELINE_ASSUMPTIONS.outageDurationDays) {
@@ -318,6 +322,18 @@ export function getObjectiveLabel(objective: ScenarioObjective) {
     case "margin":
     default:
       return "Margin";
+  }
+}
+
+export function getStrategyLabel(mode: StrategyMode) {
+  switch (mode) {
+    case "baseline":
+      return "Do nothing";
+    case "manual":
+      return "Manual response";
+    case "ai":
+    default:
+      return "AI-optimized";
   }
 }
 

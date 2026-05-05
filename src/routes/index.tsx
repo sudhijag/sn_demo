@@ -9,6 +9,7 @@ import EconomyBar from "../components/EconomyBar";
 import BuildPalette from "../components/BuildPalette";
 import PlantDetail from "../components/PlantDetail";
 import { GameStateProvider, useGameState } from "@/lib/game-state";
+import { getObjectiveLabel, getStrategyLabel } from "@/lib/scenario";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -35,7 +36,7 @@ function IndexBody() {
   const [simHour, setSimHour] = useState(6);
   const [centerView, setCenterView] = useState<CenterView>("map");
   const [isPlaying, setIsPlaying] = useState(true);
-  const { tick } = useGameState();
+  const { tick, state, currentScenario, bestScenario } = useGameState();
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -74,11 +75,13 @@ function IndexBody() {
               <circle cx="6" cy="18" r="3" />
               <path d="M18 9a9 9 0 0 1-9 9" />
             </svg>
-            <span className="text-[11px] font-mono text-primary">Major Plant Outage</span>
+            <span className="text-[11px] font-mono text-primary">
+              Dallas outage · {state.assumptions.outageDurationDays}d · {getStrategyLabel(currentScenario.mode)}
+            </span>
           </div>
           <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
             <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-            Live
+            Best {getObjectiveLabel(state.objective)}: {getStrategyLabel(bestScenario.mode)}
           </span>
         </div>
       </div>
@@ -122,9 +125,17 @@ function IndexBody() {
           {centerView === "capacity" && (
             <div className="flex-1 flex items-center justify-center p-6">
               <div className="card-surface p-6 max-w-xl w-full">
-                <div className="text-sm font-semibold text-foreground mb-4">Future Capacity Forecast — Network</div>
+                <div className="text-sm font-semibold text-foreground mb-2">Projected Network Outlook</div>
+                <div className="text-[11px] text-muted-foreground mb-4">
+                  {getStrategyLabel(currentScenario.mode)} under a {state.assumptions.outageDurationDays}-day outage with {state.assumptions.spareCapacityPct}% spare capacity.
+                </div>
                 <div className="flex items-end gap-2 h-40">
-                  {[72, 68, 74, 71, 78, 82, 80, 85, 83, 88, 90, 92].map((v, i) => (
+                  {Array.from({ length: 12 }, (_, i) => {
+                    const base = 62 + i * 2.2;
+                    const lift = currentScenario.outcome.serviceLevelPct * 0.18 - currentScenario.outcome.recoveryDays * 0.7;
+                    const v = Math.max(48, Math.min(96, Math.round(base + lift)));
+                    return v;
+                  }).map((v, i) => (
                     <div key={i} className="flex-1 flex flex-col items-center gap-1">
                       <div className="w-full rounded-sm relative overflow-hidden" style={{ height: `${v}%`, background: "var(--sn-green-dim)" }}>
                         <div className="absolute inset-x-0 bottom-0 transition-all duration-500" style={{ background: "var(--sn-green)", height: "100%" }} />
@@ -136,8 +147,8 @@ function IndexBody() {
                   ))}
                 </div>
                 <div className="mt-4 flex justify-between text-[10px] text-muted-foreground">
-                  <span>Projected: +12% by Q4</span>
-                  <span className="text-primary font-mono">AI Confidence: 87%</span>
+                  <span>Projected margin impact: {currentScenario.outcome.marginDeltaPct.toFixed(1)}%</span>
+                  <span className="text-primary font-mono">Confidence: {Math.round(currentScenario.outcome.confidencePct)}%</span>
                 </div>
               </div>
             </div>

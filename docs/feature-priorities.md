@@ -265,7 +265,7 @@ Status:
 - `[x]` Build visible intervention selection UI.
 - `[x]` Build baseline/manual/AI comparison UI.
 - `[x]` Make the executive console answer from live scenario state.
-- `[ ]` Push the scenario state into the center-stage visuals so the whole room sees the change.
+- `[x]` Push the scenario state into the center-stage visuals so the whole room sees the change.
 
 Acceptance criteria:
 
@@ -288,9 +288,9 @@ Upgrade the visible simulation surfaces so the product message travels instantly
 
 Status:
 
-- `[ ]` Replace hardcoded top-bar narrative metrics with scenario-derived numbers.
+- `[x]` Replace hardcoded top-bar narrative metrics with scenario-derived numbers.
 - `[ ]` Replace static outage and recovery banners with scenario-aware messaging.
-- `[ ]` Make the map, network throughput, and KPI summaries reflect active assumptions and strategy.
+- `[x]` Make the map, network throughput, and KPI summaries reflect active assumptions and strategy.
 - `[ ]` Make the center panel tell a clearer before/after story without requiring chat.
 
 Acceptance criteria:

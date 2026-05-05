@@ -4,6 +4,7 @@ import { ComposableMap, Geographies, Geography, Marker, Line } from "react-simpl
 import { geoAlbers } from "d3-geo";
 import { useGameState } from "@/lib/game-state";
 import type { Building, BuildingKind, PlantStatus } from "@/lib/buildings";
+import { getStrategyLabel } from "@/lib/scenario";
 
 // Secondary distribution centers / warehouses (real cities, decorative)
 const secondaryLocations: [number, number][] = [
@@ -219,7 +220,7 @@ interface NetworkMapProps {
 }
 
 export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
-  const { state, selectBuilding, placeBuilding } = useGameState();
+  const { state, currentScenario, bestScenario, selectBuilding, placeBuilding } = useGameState();
   const buildings = state.buildings;
   const [hoveredPlant, setHoveredPlant] = useState<string | null>(null);
 
@@ -233,8 +234,17 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
     return map;
   }, [buildings]);
 
+  const mitigatedFlowCount = currentScenario.mode === "ai" ? 2 : currentScenario.mode === "manual" ? 1 : 0;
+  const scenarioFlows = useMemo(
+    () => flows.map((flow, index) => ({
+      ...flow,
+      disrupted: flow.disrupted ? index >= mitigatedFlowCount : false,
+    })),
+    [mitigatedFlowCount],
+  );
+
   const flowPaths = useMemo(() => {
-    return flows
+    return scenarioFlows
       .map((f) => {
         const a = projected[f.from];
         const b = projected[f.to];
@@ -254,11 +264,18 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
         };
       })
       .filter(<T,>(x: T | null): x is T => x !== null);
-  }, [projected]);
+  }, [projected, scenarioFlows]);
 
   const activeTrucks = flowPaths.filter((fp) => !fp.disrupted).length;
   const stalledTrucks = flowPaths.filter((fp) => fp.disrupted).length;
-  const unitsPerHour = 1240 + simHour * 18 + simDay * 4;
+  const unitsPerHour = Math.round(1240 + simHour * 18 + simDay * 4 + currentScenario.outcome.serviceLevelPct * 6 - currentScenario.outcome.recoveryDays * 10);
+  const disruptionLabel =
+    currentScenario.mode === "baseline"
+      ? "Cascading failures active"
+      : currentScenario.mode === "manual"
+        ? "Manual mitigations partially absorbing shock"
+        : "AI reroute and recovery plan stabilizing flow";
+  const laneRecovery = flows.filter((flow) => flow.disrupted).length - stalledTrucks;
 
   const seedPlant = (id: string) => buildings.find((b) => b.id === id);
 
@@ -322,7 +339,7 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
       onClick={handleMapClick}
       style={{ cursor: state.buildMode ? "crosshair" : undefined }}
     >
-      {/* Dallas Down banner */}
+      {/* Dallas banner */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
         <motion.div
           className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-sn-danger/50"
@@ -332,7 +349,7 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
         >
           <span className="w-2 h-2 rounded-full bg-sn-danger pulse-dot" />
           <span className="text-[11px] font-mono font-bold text-sn-danger">
-            DALLAS PLANT DOWN — DAY {simDay} — CASCADING FAILURES ACTIVE
+            DALLAS OUTAGE {state.assumptions.outageDurationDays}D — DAY {simDay} — {disruptionLabel.toUpperCase()}
           </span>
         </motion.div>
       </div>
@@ -403,7 +420,7 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
             ))}
 
             {/* Disrupted flows (only if both seed plants exist) */}
-            {flows.filter((f) => f.disrupted && seedPlant(f.from) && seedPlant(f.to)).map((f) => {
+            {scenarioFlows.filter((f) => f.disrupted && seedPlant(f.from) && seedPlant(f.to)).map((f) => {
               const from = seedPlant(f.from)!;
               const to = seedPlant(f.to)!;
               return (
@@ -417,7 +434,7 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
             })}
 
             {/* Normal flows */}
-            {flows.filter((f) => !f.disrupted && seedPlant(f.from) && seedPlant(f.to)).map((f) => {
+            {scenarioFlows.filter((f) => !f.disrupted && seedPlant(f.from) && seedPlant(f.to)).map((f) => {
               const from = seedPlant(f.from)!;
               const to = seedPlant(f.to)!;
               return (
@@ -492,8 +509,8 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
           {buildings.length} Buildings · Trucks in transit: {activeTrucks} · Stalled: {stalledTrucks} · Units/hr: {unitsPerHour.toLocaleString()}
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-sn-danger pulse-dot" />
-          Failure Propagation Active — Day {simDay}
+          <span className={`w-1.5 h-1.5 rounded-full ${bestScenario.mode === currentScenario.mode ? "bg-primary" : "bg-sn-warning"} pulse-dot`} />
+          {getStrategyLabel(currentScenario.mode)} · {laneRecovery} disrupted lanes recovered
         </span>
         <div className="flex items-center gap-1">
           <button className="w-6 h-6 flex items-center justify-center rounded border border-border bg-secondary text-muted-foreground hover:text-foreground transition-colors text-xs">−</button>
