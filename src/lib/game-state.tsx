@@ -9,6 +9,16 @@ import {
   type BuildingKind,
   type CatalogItem,
 } from "@/lib/buildings";
+import {
+  BASELINE_ASSUMPTIONS,
+  buildScenarioVersions,
+  getBestStrategy,
+  type InterventionType,
+  type ScenarioAssumptions,
+  type ScenarioObjective,
+  type ScenarioVersion,
+  type StrategyMode,
+} from "@/lib/scenario";
 
 export interface GameEvent {
   id: string;
@@ -35,6 +45,10 @@ export interface GameState {
   pendingCatalog: BuildingKind | null; // catalog item queued to place
   events: GameEvent[];
   lastTick: number;
+  objective: ScenarioObjective;
+  activeScenarioMode: StrategyMode;
+  assumptions: ScenarioAssumptions;
+  selectedInterventions: InterventionType[];
 }
 
 type Action =
@@ -47,7 +61,11 @@ type Action =
   | { type: "REPAIR"; id: string }
   | { type: "HIRE"; id: string; count: number }
   | { type: "BUY_MACHINE"; id: string }
-  | { type: "PUSH_EVENT"; event: Omit<GameEvent, "id" | "tick"> };
+  | { type: "PUSH_EVENT"; event: Omit<GameEvent, "id" | "tick"> }
+  | { type: "SET_OBJECTIVE"; objective: ScenarioObjective }
+  | { type: "SET_ACTIVE_SCENARIO"; mode: StrategyMode }
+  | { type: "UPDATE_ASSUMPTION"; key: keyof ScenarioAssumptions; value: ScenarioAssumptions[keyof ScenarioAssumptions] }
+  | { type: "TOGGLE_INTERVENTION"; intervention: InterventionType };
 
 function initial(): GameState {
   return {
@@ -71,6 +89,10 @@ function initial(): GameState {
       { id: "ev-seed-2", tick: 0, tone: "info", text: "AI co-pilot online · evaluating reroute scenarios" },
     ],
     lastTick: 0,
+    objective: "margin",
+    activeScenarioMode: "manual",
+    assumptions: BASELINE_ASSUMPTIONS,
+    selectedInterventions: ["reroute_volume", "add_overtime"],
   };
 }
 
@@ -305,6 +327,32 @@ function reducer(state: GameState, action: Action): GameState {
           ...state.events,
         ].slice(0, 12),
       };
+
+    case "SET_OBJECTIVE":
+      return { ...state, objective: action.objective };
+
+    case "SET_ACTIVE_SCENARIO":
+      return { ...state, activeScenarioMode: action.mode };
+
+    case "UPDATE_ASSUMPTION":
+      return {
+        ...state,
+        assumptions: {
+          ...state.assumptions,
+          [action.key]: action.value,
+        },
+      };
+
+    case "TOGGLE_INTERVENTION": {
+      const selectedInterventions = state.selectedInterventions.includes(action.intervention)
+        ? state.selectedInterventions.filter((item) => item !== action.intervention)
+        : [...state.selectedInterventions, action.intervention];
+
+      return {
+        ...state,
+        selectedInterventions,
+      };
+    }
   }
 }
 
@@ -321,6 +369,13 @@ interface GameStateContextValue {
   buyMachine: (id: string) => void;
   selectedBuilding: Building | null;
   catalog: CatalogItem[];
+  scenarios: Record<StrategyMode, ScenarioVersion>;
+  currentScenario: ScenarioVersion;
+  bestScenario: ScenarioVersion;
+  setObjective: (objective: ScenarioObjective) => void;
+  setActiveScenario: (mode: StrategyMode) => void;
+  updateAssumption: <K extends keyof ScenarioAssumptions>(key: K, value: ScenarioAssumptions[K]) => void;
+  toggleIntervention: (intervention: InterventionType) => void;
 }
 
 const GameStateContext = createContext<GameStateContextValue | null>(null);
@@ -337,11 +392,27 @@ export function GameStateProvider({ children }: { children: ReactNode }) {
   const repair = useCallback((id: string) => dispatch({ type: "REPAIR", id }), []);
   const hire = useCallback((id: string, count: number) => dispatch({ type: "HIRE", id, count }), []);
   const buyMachine = useCallback((id: string) => dispatch({ type: "BUY_MACHINE", id }), []);
+  const setObjective = useCallback((objective: ScenarioObjective) => dispatch({ type: "SET_OBJECTIVE", objective }), []);
+  const setActiveScenario = useCallback((mode: StrategyMode) => dispatch({ type: "SET_ACTIVE_SCENARIO", mode }), []);
+  const updateAssumption = useCallback(<K extends keyof ScenarioAssumptions,>(key: K, value: ScenarioAssumptions[K]) => {
+    dispatch({ type: "UPDATE_ASSUMPTION", key, value });
+  }, []);
+  const toggleIntervention = useCallback((intervention: InterventionType) => {
+    dispatch({ type: "TOGGLE_INTERVENTION", intervention });
+  }, []);
 
   const selectedBuilding = useMemo(
     () => state.buildings.find(b => b.id === state.selectedBuildingId) ?? null,
     [state.buildings, state.selectedBuildingId],
   );
+
+  const scenarios = useMemo(
+    () => buildScenarioVersions(state.assumptions, state.selectedInterventions),
+    [state.assumptions, state.selectedInterventions],
+  );
+
+  const currentScenario = scenarios[state.activeScenarioMode];
+  const bestScenario = getBestStrategy(scenarios, state.objective);
 
   const value = useMemo<GameStateContextValue>(
     () => ({
@@ -357,8 +428,34 @@ export function GameStateProvider({ children }: { children: ReactNode }) {
       buyMachine,
       selectedBuilding,
       catalog: BUILDING_CATALOG,
+      scenarios,
+      currentScenario,
+      bestScenario,
+      setObjective,
+      setActiveScenario,
+      updateAssumption,
+      toggleIntervention,
     }),
-    [state, tick, selectBuilding, enterBuildMode, exitBuildMode, placeBuilding, upgrade, repair, hire, buyMachine, selectedBuilding],
+    [
+      state,
+      tick,
+      selectBuilding,
+      enterBuildMode,
+      exitBuildMode,
+      placeBuilding,
+      upgrade,
+      repair,
+      hire,
+      buyMachine,
+      selectedBuilding,
+      scenarios,
+      currentScenario,
+      bestScenario,
+      setObjective,
+      setActiveScenario,
+      updateAssumption,
+      toggleIntervention,
+    ],
   );
 
   return <GameStateContext.Provider value={value}>{children}</GameStateContext.Provider>;
