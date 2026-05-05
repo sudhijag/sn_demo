@@ -76,7 +76,9 @@ function IndexBody() {
               <path d="M18 9a9 9 0 0 1-9 9" />
             </svg>
             <span className="text-[11px] font-mono text-primary">
-              Dallas outage · {state.assumptions.outageDurationDays}d · {getStrategyLabel(currentScenario.mode)}
+              {state.simulationPhase === "baseline"
+                ? "Baseline set · all network plants online"
+                : `Dallas outage · ${state.assumptions.outageDurationDays}d · ${getStrategyLabel(currentScenario.mode)}`}
             </span>
           </div>
           <span className="flex items-center gap-1 text-[10px] text-muted-foreground">

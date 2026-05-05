@@ -3,11 +3,12 @@
 export type BuildingKind = "factory" | "warehouse" | "hub" | "rnd" | "store";
 
 export type PlantStatus = "active" | "warning" | "alert" | "down";
+export type LineStatus = "active" | "bottleneck" | "maintenance" | "idle";
 
 export interface ProductionLine {
   id: string;
   name: string;
-  status: "active" | "bottleneck" | "maintenance" | "idle";
+  status: LineStatus;
   output: number; // units / hour
   target: number;
 }
@@ -142,17 +143,17 @@ export const SEED_PLANTS: Building[] = [
   },
   {
     id: "dal", kind: "factory", label: "Dallas", coords: [-96.7970, 32.7767],
-    status: "down", capacity: 0, level: 3,
-    workers: 0, workersCapacity: 1200, morale: 0.32,
-    machines: 42, machinesCapacity: 48, machineCondition: 0.26, machineUtil: 0.0,
-    lines: lines("dal").map(l => ({ ...l, status: "idle", output: 0 })),
-    revenuePerHr: 0, upkeepPerHr: 1800, isSeed: true,
+    status: "active", capacity: 84, level: 3,
+    workers: 1180, workersCapacity: 1200, morale: 0.81,
+    machines: 42, machinesCapacity: 48, machineCondition: 0.87, machineUtil: 0.78,
+    lines: lines("dal"),
+    revenuePerHr: 5900, upkeepPerHr: 1800, isSeed: true,
   },
   {
     id: "phx", kind: "factory", label: "Phoenix", coords: [-112.0740, 33.4484],
-    status: "warning", capacity: 61, level: 2,
-    workers: 620, workersCapacity: 900, morale: 0.64,
-    machines: 32, machinesCapacity: 40, machineCondition: 0.71, machineUtil: 0.66,
+    status: "active", capacity: 76, level: 2,
+    workers: 760, workersCapacity: 900, morale: 0.77,
+    machines: 32, machinesCapacity: 40, machineCondition: 0.82, machineUtil: 0.74,
     lines: lines("phx"),
     revenuePerHr: 3600, upkeepPerHr: 1400, isSeed: true,
   },
@@ -166,9 +167,9 @@ export const SEED_PLANTS: Building[] = [
   },
   {
     id: "atl", kind: "factory", label: "Atlanta", coords: [-84.3880, 33.7490],
-    status: "warning", capacity: 72, level: 2,
-    workers: 820, workersCapacity: 1000, morale: 0.68,
-    machines: 38, machinesCapacity: 46, machineCondition: 0.74, machineUtil: 0.70,
+    status: "active", capacity: 79, level: 2,
+    workers: 860, workersCapacity: 1000, morale: 0.76,
+    machines: 38, machinesCapacity: 46, machineCondition: 0.81, machineUtil: 0.74,
     lines: lines("atl"),
     revenuePerHr: 4200, upkeepPerHr: 1600, isSeed: true,
   },

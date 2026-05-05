@@ -5,15 +5,17 @@ import { formatDeltaPct, formatMillions, getObjectiveLabel, getStrategyLabel } f
 export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { simDay: number; simHour: number; isPlaying: boolean; onTogglePlay: () => void }) {
   const { state, scenarios, currentScenario, bestScenario } = useGameState();
   const baseline = scenarios.baseline;
-  const ai = scenarios.ai;
   const objectiveLabel = getObjectiveLabel(state.objective);
+  const progressPct = Math.min(100, (state.lastTick / 12) * 100);
+  const phaseOrder = ["baseline", "incident", "response", "recovery", "steady"];
+  const activePhaseIndex = phaseOrder.indexOf(state.simulationPhase);
 
   const timelinePoints = [
-    { label: "Baseline Set", time: "T0", active: false, done: true, star: true },
-    { label: "Equipment Failure", time: "T1", active: false, done: true, star: true },
-    { label: currentScenario.mode === "baseline" ? "Observe Impact" : currentScenario.mode === "manual" ? "Manual Plan" : "AI Plan", time: "T2", active: true, done: false, star: true },
-    { label: bestScenario.mode === currentScenario.mode ? "Winning Path" : "Tradeoff Review", time: "T3", active: false, done: currentScenario.enabledInterventions.length > 0, star: false },
-    { label: "Steady State", time: "T4", active: false, done: false, star: false },
+    { label: "Baseline Set", time: "T0", phase: "baseline" },
+    { label: "Equipment Failure", time: "T1", phase: "incident" },
+    { label: currentScenario.mode === "baseline" ? "Observe Impact" : currentScenario.mode === "manual" ? "Manual Plan" : "AI Plan", time: "T2", phase: "response" },
+    { label: bestScenario.mode === currentScenario.mode ? "Winning Path" : "Tradeoff Review", time: "T3", phase: "recovery" },
+    { label: "Steady State", time: "T4", phase: "steady" },
   ];
 
   const plMetrics = [
@@ -73,46 +75,45 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
           )}
         </button>
 
-        <div className="flex items-center gap-0 flex-1 min-w-0">
-          {timelinePoints.map((pt, i) => (
-            <div key={pt.time} className="flex items-center flex-1">
-              <div className="flex flex-col items-center gap-0.5 relative">
-                {pt.star ? (
-                  <svg width="16" height="16" viewBox="0 0 24 24" className={pt.active ? "drop-shadow-[0_0_4px_var(--sn-green)]" : ""}>
-                    <polygon
-                      points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"
-                      fill={pt.active ? "var(--sn-green)" : pt.done ? "var(--sn-green)" : "transparent"}
-                      stroke={pt.active ? "var(--sn-green)" : pt.done ? "var(--sn-green)" : "oklch(0.4 0.02 240)"}
-                      strokeWidth="1.5"
-                      opacity={pt.active ? 1 : pt.done ? 0.6 : 0.4}
-                    />
-                  </svg>
-                ) : (
-                  <div className={`w-3 h-3 rounded-full border-2 ${
-                    pt.active
+        <div className="flex-1 min-w-0">
+          <div className="relative h-2 rounded-full overflow-hidden bg-secondary/80 border border-border mb-2">
+            <motion.div
+              className="absolute inset-y-0 left-0 rounded-full"
+              style={{ background: "linear-gradient(90deg, var(--sn-green-dim), var(--sn-green))" }}
+              initial={false}
+              animate={{ width: `${Math.max(4, progressPct)}%` }}
+              transition={{ duration: 0.5 }}
+            />
+          </div>
+          <div className="grid grid-cols-5 gap-2">
+            {timelinePoints.map((pt, i) => {
+              const pointIndex = phaseOrder.indexOf(pt.phase);
+              const done = pointIndex < activePhaseIndex;
+              const active = pointIndex === activePhaseIndex;
+              return (
+                <div key={pt.time} className="flex flex-col items-center gap-0.5 relative">
+                  <div className={`w-3.5 h-3.5 rounded-full border-2 ${
+                    active
                       ? "border-primary bg-primary glow-green-sm"
-                      : pt.done
+                      : done
                         ? "border-primary bg-primary/40"
                         : "border-muted-foreground/40 bg-transparent"
                   }`} />
-                )}
-                {pt.active && (
-                  <motion.div
-                    className="absolute -inset-1 rounded-full"
-                    style={{ boxShadow: "0 0 8px var(--sn-green-glow)" }}
-                    animate={{ opacity: [0.3, 0.8, 0.3] }}
-                    transition={{ repeat: Infinity, duration: 2 }}
-                  />
-                )}
-                <span className={`text-[9px] font-mono whitespace-nowrap ${pt.active ? "text-primary text-glow" : "text-muted-foreground"}`}>
-                  {pt.label}
-                </span>
-              </div>
-              {i < timelinePoints.length - 1 && (
-                <div className={`flex-1 h-px mx-1 mt-[-14px] ${pt.done ? "bg-primary/60" : "bg-border"}`} />
-              )}
-            </div>
-          ))}
+                  {active && (
+                    <motion.div
+                      className="absolute top-[-2px] w-4 h-4 rounded-full"
+                      style={{ boxShadow: "0 0 8px var(--sn-green-glow)" }}
+                      animate={{ opacity: [0.3, 0.8, 0.3] }}
+                      transition={{ repeat: Infinity, duration: 2 }}
+                    />
+                  )}
+                  <span className={`text-[9px] font-mono whitespace-nowrap ${active ? "text-primary text-glow" : "text-muted-foreground"}`}>
+                    {pt.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 

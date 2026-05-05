@@ -238,9 +238,9 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
   const scenarioFlows = useMemo(
     () => flows.map((flow, index) => ({
       ...flow,
-      disrupted: flow.disrupted ? index >= mitigatedFlowCount : false,
+      disrupted: state.simulationPhase === "baseline" ? false : flow.disrupted ? index >= mitigatedFlowCount : false,
     })),
-    [mitigatedFlowCount],
+    [mitigatedFlowCount, state.simulationPhase],
   );
 
   const flowPaths = useMemo(() => {
@@ -270,7 +270,9 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
   const stalledTrucks = flowPaths.filter((fp) => fp.disrupted).length;
   const unitsPerHour = Math.round(1240 + simHour * 18 + simDay * 4 + currentScenario.outcome.serviceLevelPct * 6 - currentScenario.outcome.recoveryDays * 10);
   const disruptionLabel =
-    currentScenario.mode === "baseline"
+    state.simulationPhase === "baseline"
+      ? "All plants online and running to plan"
+      : currentScenario.mode === "baseline"
       ? "Cascading failures active"
       : currentScenario.mode === "manual"
         ? "Manual mitigations partially absorbing shock"
@@ -347,9 +349,11 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
           animate={{ borderColor: ["oklch(0.65 0.22 25 / 30%)", "oklch(0.65 0.22 25 / 70%)", "oklch(0.65 0.22 25 / 30%)"] }}
           transition={{ repeat: Infinity, duration: 2 }}
         >
-          <span className="w-2 h-2 rounded-full bg-sn-danger pulse-dot" />
+          <span className={`w-2 h-2 rounded-full ${state.simulationPhase === "baseline" ? "bg-primary" : "bg-sn-danger"} pulse-dot`} />
           <span className="text-[11px] font-mono font-bold text-sn-danger">
-            DALLAS OUTAGE {state.assumptions.outageDurationDays}D — DAY {simDay} — {disruptionLabel.toUpperCase()}
+            {state.simulationPhase === "baseline"
+              ? `BASELINE SET — DAY ${simDay} — ${disruptionLabel.toUpperCase()}`
+              : `DALLAS OUTAGE ${state.assumptions.outageDurationDays}D — DAY ${simDay} — ${disruptionLabel.toUpperCase()}`}
           </span>
         </motion.div>
       </div>
@@ -509,8 +513,10 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
           {buildings.length} Buildings · Trucks in transit: {activeTrucks} · Stalled: {stalledTrucks} · Units/hr: {unitsPerHour.toLocaleString()}
         </span>
         <span className="flex items-center gap-1.5">
-          <span className={`w-1.5 h-1.5 rounded-full ${bestScenario.mode === currentScenario.mode ? "bg-primary" : "bg-sn-warning"} pulse-dot`} />
-          {getStrategyLabel(currentScenario.mode)} · {laneRecovery} disrupted lanes recovered
+          <span className={`w-1.5 h-1.5 rounded-full ${state.simulationPhase === "baseline" || bestScenario.mode === currentScenario.mode ? "bg-primary" : "bg-sn-warning"} pulse-dot`} />
+          {state.simulationPhase === "baseline"
+            ? "Baseline running · no disrupted lanes yet"
+            : `${getStrategyLabel(currentScenario.mode)} · ${laneRecovery} disrupted lanes recovered`}
         </span>
         <div className="flex items-center gap-1">
           <button className="w-6 h-6 flex items-center justify-center rounded border border-border bg-secondary text-muted-foreground hover:text-foreground transition-colors text-xs">−</button>

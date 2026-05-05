@@ -5,6 +5,7 @@ import {
   SEED_PLANTS,
   upgradeCapacityGain,
   upgradeCost,
+  type LineStatus,
   type Building,
   type BuildingKind,
   type CatalogItem,
@@ -26,6 +27,8 @@ export interface GameEvent {
   tone: "good" | "warn" | "bad" | "info";
   text: string;
 }
+
+export type SimulationPhase = "baseline" | "incident" | "response" | "recovery" | "steady";
 
 export interface GameState {
   cash: number;
@@ -49,6 +52,7 @@ export interface GameState {
   activeScenarioMode: StrategyMode;
   assumptions: ScenarioAssumptions;
   selectedInterventions: InterventionType[];
+  simulationPhase: SimulationPhase;
 }
 
 type Action =
@@ -85,14 +89,15 @@ function initial(): GameState {
     buildMode: false,
     pendingCatalog: null,
     events: [
-      { id: "ev-seed-1", tick: 0, tone: "bad", text: "Dallas plant equipment failure · cascading to 3 downstream lanes" },
-      { id: "ev-seed-2", tick: 0, tone: "info", text: "AI co-pilot online · evaluating reroute scenarios" },
+      { id: "ev-seed-1", tick: 0, tone: "info", text: "Baseline set · all network plants online and running to plan" },
+      { id: "ev-seed-2", tick: 0, tone: "info", text: "Press play to advance into the disruption timeline" },
     ],
     lastTick: 0,
     objective: "margin",
-    activeScenarioMode: "manual",
+    activeScenarioMode: "baseline",
     assumptions: BASELINE_ASSUMPTIONS,
-    selectedInterventions: ["reroute_volume", "add_overtime"],
+    selectedInterventions: [],
+    simulationPhase: "baseline",
   };
 }
 
@@ -108,27 +113,152 @@ function recomputeTotals(state: GameState): GameState {
   return { ...state, revenuePerHr, upkeepPerHr };
 }
 
+function getSimulationPhase(lastTick: number): SimulationPhase {
+  if (lastTick < 3) return "baseline";
+  if (lastTick < 6) return "incident";
+  if (lastTick < 9) return "response";
+  if (lastTick < 12) return "recovery";
+  return "steady";
+}
+
+function phaseLineStatus(phase: SimulationPhase, current: LineStatus): LineStatus {
+  if (phase === "incident" && current === "maintenance") return "idle";
+  if (phase === "incident" && current === "bottleneck") return "idle";
+  if (phase === "response" && current === "idle") return "bottleneck";
+  if (phase === "recovery" && current === "idle") return "active";
+  return current;
+}
+
+function applyPhaseToBuildings(buildings: Building[], phase: SimulationPhase, strategy: StrategyMode): Building[] {
+  const incidentMitigation = strategy === "ai" ? 0.65 : strategy === "manual" ? 0.35 : 0;
+
+  return buildings.map((building) => {
+    if (phase === "baseline") {
+      return building;
+    }
+
+    if (building.id === "dal") {
+      if (phase === "incident") {
+        return {
+          ...building,
+          status: "down",
+          capacity: 0,
+          workers: Math.round(building.workersCapacity * 0.06),
+          morale: 0.34,
+          machineCondition: 0.29,
+          machineUtil: 0,
+          revenuePerHr: 0,
+          lines: building.lines.map((line) => ({ ...line, status: "idle" as const, output: 0 })),
+        };
+      }
+
+      if (phase === "response") {
+        const recoveredCapacity = Math.round(18 + incidentMitigation * 28);
+        return {
+          ...building,
+          status: incidentMitigation > 0.45 ? "warning" : "down",
+          capacity: recoveredCapacity,
+          workers: Math.round(building.workersCapacity * (0.18 + incidentMitigation * 0.32)),
+          morale: 0.45 + incidentMitigation * 0.16,
+          machineCondition: 0.42 + incidentMitigation * 0.18,
+          machineUtil: 0.18 + incidentMitigation * 0.26,
+          revenuePerHr: Math.round(5900 * (recoveredCapacity / 100)),
+          lines: building.lines.map((line, index) => ({
+            ...line,
+            status: index < 2 ? "active" as const : "idle" as const,
+            output: index < 2 ? Math.round(line.target * (0.35 + incidentMitigation * 0.22)) : 0,
+          })),
+        };
+      }
+
+      if (phase === "recovery" || phase === "steady") {
+        const recoveredCapacity = phase === "steady" ? Math.round(82 + incidentMitigation * 10) : Math.round(58 + incidentMitigation * 20);
+        return {
+          ...building,
+          status: phase === "steady" ? "active" : "warning",
+          capacity: recoveredCapacity,
+          workers: Math.round(building.workersCapacity * (0.62 + incidentMitigation * 0.24)),
+          morale: phase === "steady" ? 0.77 : 0.64,
+          machineCondition: phase === "steady" ? 0.84 : 0.68,
+          machineUtil: phase === "steady" ? 0.76 : 0.58,
+          revenuePerHr: Math.round(5900 * (recoveredCapacity / 100)),
+          lines: building.lines.map((line) => ({
+            ...line,
+            status: phase === "steady" ? "active" as const : phaseLineStatus(phase, line.status),
+            output: Math.round(line.target * (phase === "steady" ? 0.9 : 0.68)),
+          })),
+        };
+      }
+    }
+
+    if (building.id === "phx" || building.id === "atl" || building.id === "det") {
+      if (phase === "incident") {
+        const warningCapacity = building.id === "det" ? 68 : 74;
+        return {
+          ...building,
+          status: "warning",
+          capacity: warningCapacity,
+          machineUtil: Math.min(0.98, building.machineUtil + 0.13),
+          morale: Math.max(0.58, building.morale - 0.08),
+          lines: building.lines.map((line) => ({
+            ...line,
+            status: line.id.endsWith("L3") ? "bottleneck" as const : phaseLineStatus("response", line.status),
+            output: Math.round(line.target * (line.id.endsWith("L3") ? 0.58 : 0.82)),
+          })),
+        };
+      }
+
+      if (phase === "response" || phase === "recovery") {
+        const lift = incidentMitigation * 12;
+        const capacity = Math.round((phase === "response" ? 78 : 84) + lift);
+        return {
+          ...building,
+          status: phase === "response" ? "warning" : "active",
+          capacity: Math.min(96, capacity),
+          machineUtil: Math.min(0.97, building.machineUtil + 0.07 + incidentMitigation * 0.08),
+          morale: Math.max(0.62, building.morale - 0.03 + incidentMitigation * 0.04),
+          lines: building.lines.map((line) => ({
+            ...line,
+            status: phase === "response" && line.id.endsWith("L3") ? "bottleneck" as const : "active" as const,
+            output: Math.round(line.target * (phase === "response" ? 0.87 + incidentMitigation * 0.05 : 0.92)),
+          })),
+        };
+      }
+    }
+
+    return building;
+  });
+}
+
 function reducer(state: GameState, action: Action): GameState {
   switch (action.type) {
     case "TICK": {
-      const net = state.revenuePerHr - state.upkeepPerHr;
+      const lastTick = state.lastTick + 1;
+      const simulationPhase = getSimulationPhase(lastTick);
+      const phaseBuildings = applyPhaseToBuildings(state.buildings, simulationPhase, state.activeScenarioMode);
+      const phaseState = recomputeTotals({ ...state, buildings: phaseBuildings });
+      const net = phaseState.revenuePerHr - phaseState.upkeepPerHr;
       const cash = state.cash + net;
       // Inventory flows: raw consumed, wip produced, finished produced, finished sold (by stores + revenue)
-      const rawBurn = Math.round(state.buildings.reduce((s, b) => s + b.capacity * 0.4, 0));
-      const wipMake = Math.round(state.buildings.reduce((s, b) => s + b.capacity * 0.35, 0));
-      const finMake = Math.round(state.buildings.reduce((s, b) => s + b.capacity * 0.3, 0));
-      const storeSell = state.buildings.filter(b => b.kind === "store").reduce((s, b) => s + Math.round(b.capacity * 0.8), 0);
-      const soldToCustomers = Math.min(state.finishedInventory, 120 + storeSell);
-      const rawInventory = Math.max(40, Math.min(state.rawCapacity, state.rawInventory - rawBurn / 14 + 18));
-      const wipInventory = Math.max(20, Math.min(state.wipCapacity, state.wipInventory - wipMake / 30 + wipMake / 26));
-      const finishedInventory = Math.max(100, Math.min(state.finishedCapacity, state.finishedInventory + finMake / 18 - soldToCustomers / 20));
+      const rawBurn = Math.round(phaseState.buildings.reduce((s, b) => s + b.capacity * 0.4, 0));
+      const wipMake = Math.round(phaseState.buildings.reduce((s, b) => s + b.capacity * 0.35, 0));
+      const finMake = Math.round(phaseState.buildings.reduce((s, b) => s + b.capacity * 0.3, 0));
+      const storeSell = phaseState.buildings.filter(b => b.kind === "store").reduce((s, b) => s + Math.round(b.capacity * 0.8), 0);
+      const soldToCustomers = Math.min(phaseState.finishedInventory, 120 + storeSell);
+      const rawInventory = Math.max(40, Math.min(phaseState.rawCapacity, phaseState.rawInventory - rawBurn / 14 + 18));
+      const wipInventory = Math.max(20, Math.min(phaseState.wipCapacity, phaseState.wipInventory - wipMake / 30 + wipMake / 26));
+      const finishedInventory = Math.max(100, Math.min(phaseState.finishedCapacity, phaseState.finishedInventory + finMake / 18 - soldToCustomers / 20));
       const reputation = Math.max(2, Math.min(5, state.reputation + (net > 0 ? 0.005 : -0.008) + (Math.random() - 0.5) * 0.01));
       const energyKwh = Math.max(400_000, Math.min(1_500_000, state.energyKwh + (Math.random() - 0.45) * 2400));
-      const lastTick = state.lastTick + 1;
 
-      // Random ambient event every ~6 ticks
       const events = [...state.events];
-      if (lastTick % 6 === 0) {
+      if (lastTick === 3) {
+        events.unshift({ id: nextEventId(), tick: lastTick, tone: "bad", text: "Dallas press line failure · sub-assembly output collapsed and 3 downstream lanes are exposed" });
+      } else if (lastTick === 6) {
+        events.unshift({ id: nextEventId(), tick: lastTick, tone: "warn", text: "Response window open · compare manual action plan against AI-optimized reroute" });
+      } else if (lastTick === 9) {
+        events.unshift({ id: nextEventId(), tick: lastTick, tone: "good", text: "Recovery phase active · network throughput stabilizing under the selected plan" });
+      } else if (lastTick % 6 === 0) {
         const pool: Array<Omit<GameEvent, "id" | "tick">> = [
           { tone: "good", text: "Pricing AI closed a $340K premium order · Detroit apparel" },
           { tone: "info", text: "Phoenix SMT line hit 96% yield on the new batch" },
@@ -143,7 +273,7 @@ function reducer(state: GameState, action: Action): GameState {
       if (events.length > 12) events.length = 12;
 
       return {
-        ...state,
+        ...phaseState,
         cash,
         rawInventory,
         wipInventory,
@@ -152,6 +282,7 @@ function reducer(state: GameState, action: Action): GameState {
         energyKwh,
         events,
         lastTick,
+        simulationPhase,
       };
     }
 
@@ -332,7 +463,9 @@ function reducer(state: GameState, action: Action): GameState {
       return { ...state, objective: action.objective };
 
     case "SET_ACTIVE_SCENARIO":
-      return { ...state, activeScenarioMode: action.mode };
+      return state.simulationPhase === "baseline"
+        ? { ...state, activeScenarioMode: "baseline" }
+        : { ...state, activeScenarioMode: action.mode };
 
     case "UPDATE_ASSUMPTION":
       return {

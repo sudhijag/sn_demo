@@ -261,6 +261,8 @@ Make the demo playable end-to-end in a way that is legible when the laptop is tu
 
 Status:
 
+- `[x]` Start the simulation in a true baseline state before the disruption hits.
+- `[x]` Advance through a visible phase timeline with a real progress bar.
 - `[x]` Build visible assumptions UI.
 - `[x]` Build visible intervention selection UI.
 - `[x]` Build baseline/manual/AI comparison UI.
