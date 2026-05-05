@@ -41,9 +41,6 @@ export default function KPIPanel() {
         ))}
       </div>
 
-      {/* Separator */}
-      <div className="h-px bg-border/50 my-3" />
-
       {/* System Alerts */}
       <div className="mt-2">
         <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium mb-2">

@@ -48,22 +48,11 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
           )}
         </button>
 
-        {/* Timeline track wrapped in elongated oval */}
-        <div className="flex items-center gap-0 flex-1 min-w-0 px-4 py-2 rounded-full border border-border/50 bg-secondary/30 relative">
-          {/* Progress line background */}
-          <div className="absolute left-4 right-4 h-0.5 bg-border" style={{ top: 'calc(50% - 10px)' }} />
-          {/* Progress line filled portion */}
-          <div
-            className="absolute left-4 h-0.5 bg-primary/60 transition-all duration-500"
-            style={{
-              top: 'calc(50% - 10px)',
-              width: `calc(${(timelinePoints.findIndex(p => p.active) / (timelinePoints.length - 1)) * 100}% - 0.5rem)`
-            }}
-          />
-
-          <div className="flex items-center justify-between flex-1 relative z-10">
-            {timelinePoints.map((pt, i) => (
-              <div key={pt.time} className="flex flex-col items-center gap-0.5 relative">
+        {/* Timeline track */}
+        <div className="flex items-center gap-0 flex-1 min-w-0">
+          {timelinePoints.map((pt, i) => (
+            <div key={pt.time} className="flex items-center flex-1">
+              <div className="flex flex-col items-center gap-0.5 relative">
                 {/* Star for decision points */}
                 {pt.star ? (
                   <svg width="16" height="16" viewBox="0 0 24 24" className={pt.active ? "drop-shadow-[0_0_4px_var(--sn-green)]" : ""}>
@@ -84,12 +73,25 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
                         : "border-muted-foreground/40 bg-transparent"
                   }`} />
                 )}
+                {pt.active && (
+                  <motion.div
+                    className="absolute -inset-1 rounded-full"
+                    style={{ boxShadow: "0 0 8px var(--sn-green-glow)" }}
+                    animate={{ opacity: [0.3, 0.8, 0.3] }}
+                    transition={{ repeat: Infinity, duration: 2 }}
+                  />
+                )}
                 <span className={`text-[9px] font-mono whitespace-nowrap ${pt.active ? "text-primary text-glow" : "text-muted-foreground"}`}>
                   {pt.label}
                 </span>
               </div>
-            ))}
-          </div>
+              {i < timelinePoints.length - 1 && (
+                <div className={`flex-1 h-px mx-1 mt-[-14px] ${
+                  pt.done ? "bg-primary/60" : "bg-border"
+                }`} />
+              )}
+            </div>
+          ))}
         </div>
       </div>
 
