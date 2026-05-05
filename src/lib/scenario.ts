@@ -258,7 +258,7 @@ export function computeScenarioOutcome(
   );
 
   const totalCost = enabledInterventions.reduce((sum, type) => sum + interventionByType[type].estimatedCost, 0);
-  const summary = `${mode === "ai" ? "AI plan" : mode === "manual" ? "Manual plan" : "Do nothing"} projects ${formatMillions(revenueDelta)} revenue impact, ${serviceLevelPct.toFixed(1)}% service, and ${recoveryDays.toFixed(1)} days to steady state on ${totalCost > 0 ? `${formatMillions(totalCost)} execution cost` : "no intervention spend"}.`;
+  const summary = `${mode === "ai" ? "AI plan" : mode === "manual" ? "Manual plan" : "Control case"} projects ${formatMillions(revenueDelta)} revenue impact, ${serviceLevelPct.toFixed(1)}% service, and ${recoveryDays.toFixed(1)} days to steady state on ${totalCost > 0 ? `${formatMillions(totalCost)} execution cost` : "no intervention spend"}.`;
 
   return {
     revenueDelta,
@@ -281,7 +281,7 @@ export function buildScenarioVersions(
   return {
     baseline: {
       id: "baseline",
-      label: "Do nothing",
+      label: "Control",
       mode: "baseline",
       assumptions,
       enabledInterventions: [],
@@ -347,7 +347,7 @@ export function getObjectiveLabel(objective: ScenarioObjective) {
 export function getStrategyLabel(mode: StrategyMode) {
   switch (mode) {
     case "baseline":
-      return "Do nothing";
+      return "Control";
     case "manual":
       return "Manual response";
     case "ai":

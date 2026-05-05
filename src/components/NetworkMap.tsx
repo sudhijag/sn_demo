@@ -4,7 +4,6 @@ import { ComposableMap, Geographies, Geography, Marker, Line } from "react-simpl
 import { geoAlbers } from "d3-geo";
 import { useGameState } from "@/lib/game-state";
 import type { Building, BuildingKind, PlantStatus } from "@/lib/buildings";
-import { getStrategyLabel } from "@/lib/scenario";
 
 // Secondary distribution centers / warehouses (real cities, decorative)
 const secondaryLocations: [number, number][] = [
@@ -220,7 +219,7 @@ interface NetworkMapProps {
 }
 
 export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
-  const { state, currentScenario, bestScenario, selectBuilding, placeBuilding } = useGameState();
+  const { state, currentScenario, selectBuilding, placeBuilding } = useGameState();
   const buildings = state.buildings;
   const [hoveredPlant, setHoveredPlant] = useState<string | null>(null);
 
@@ -265,19 +264,6 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
       })
       .filter(<T,>(x: T | null): x is T => x !== null);
   }, [projected, scenarioFlows]);
-
-  const activeTrucks = flowPaths.filter((fp) => !fp.disrupted).length;
-  const stalledTrucks = flowPaths.filter((fp) => fp.disrupted).length;
-  const unitsPerHour = Math.round(1240 + simHour * 18 + simDay * 4 + currentScenario.outcome.serviceLevelPct * 6 - currentScenario.outcome.recoveryDays * 10);
-  const disruptionLabel =
-    state.simulationPhase === "baseline"
-      ? "All plants online and running to plan"
-      : currentScenario.mode === "baseline"
-      ? "Cascading failures active"
-      : currentScenario.mode === "manual"
-        ? "Manual mitigations partially absorbing shock"
-        : "AI reroute and recovery plan stabilizing flow";
-  const laneRecovery = flows.filter((flow) => flow.disrupted).length - stalledTrucks;
 
   const seedPlant = (id: string) => buildings.find((b) => b.id === id);
 
@@ -341,23 +327,6 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
       onClick={handleMapClick}
       style={{ cursor: state.buildMode ? "crosshair" : undefined }}
     >
-      {/* Dallas banner */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
-        <motion.div
-          className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-sn-danger/50"
-          style={{ background: "oklch(0.2 0.06 25 / 80%)", backdropFilter: "blur(8px)" }}
-          animate={{ borderColor: ["oklch(0.65 0.22 25 / 30%)", "oklch(0.65 0.22 25 / 70%)", "oklch(0.65 0.22 25 / 30%)"] }}
-          transition={{ repeat: Infinity, duration: 2 }}
-        >
-          <span className={`w-2 h-2 rounded-full ${state.simulationPhase === "baseline" ? "bg-primary" : "bg-sn-danger"} pulse-dot`} />
-          <span className="text-[11px] font-mono font-bold text-sn-danger">
-            {state.simulationPhase === "baseline"
-              ? `BASELINE SET — DAY ${simDay} — ${disruptionLabel.toUpperCase()}`
-              : `DALLAS OUTAGE ${state.assumptions.outageDurationDays}D — DAY ${simDay} — ${disruptionLabel.toUpperCase()}`}
-          </span>
-        </motion.div>
-      </div>
-
       {/* Legend */}
       <div className="absolute top-3 right-3 z-10 flex items-center gap-4 text-[10px]">
         <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-primary" /> Operational</span>
@@ -507,17 +476,8 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
         </div>
       </div>
 
-      {/* Bottom stats bar */}
-      <div className="flex items-center justify-between px-5 py-2 border-t border-border text-[10px] font-mono text-muted-foreground">
-        <span>
-          {buildings.length} Buildings · Trucks in transit: {activeTrucks} · Stalled: {stalledTrucks} · Units/hr: {unitsPerHour.toLocaleString()}
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className={`w-1.5 h-1.5 rounded-full ${state.simulationPhase === "baseline" || bestScenario.mode === currentScenario.mode ? "bg-primary" : "bg-sn-warning"} pulse-dot`} />
-          {state.simulationPhase === "baseline"
-            ? "Baseline running · no disrupted lanes yet"
-            : `${getStrategyLabel(currentScenario.mode)} · ${laneRecovery} disrupted lanes recovered`}
-        </span>
+      {/* Bottom controls */}
+      <div className="flex items-center justify-end px-5 py-2 border-t border-border text-[10px] font-mono text-muted-foreground">
         <div className="flex items-center gap-1">
           <button className="w-6 h-6 flex items-center justify-center rounded border border-border bg-secondary text-muted-foreground hover:text-foreground transition-colors text-xs">−</button>
           <button className="w-6 h-6 flex items-center justify-center rounded border border-border bg-secondary text-muted-foreground hover:text-foreground transition-colors">

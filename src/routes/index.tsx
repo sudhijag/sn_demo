@@ -1,15 +1,12 @@
 import { useState, useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import TopBar from "../components/TopBar";
-import KPIPanel from "../components/KPIPanel";
-import InterPlantSimulation from "../components/InterPlantSimulation";
 import NetworkMap from "../components/NetworkMap";
 import ChatPanel from "../components/ChatPanel";
-import EconomyBar from "../components/EconomyBar";
 import BuildPalette from "../components/BuildPalette";
 import PlantDetail from "../components/PlantDetail";
 import { GameStateProvider, useGameState } from "@/lib/game-state";
-import { getObjectiveLabel, getStrategyLabel } from "@/lib/scenario";
+import { getStrategyLabel } from "@/lib/scenario";
 import { SIM_TICK_MS } from "@/lib/sim-config";
 
 export const Route = createFileRoute("/")({
@@ -22,8 +19,6 @@ export const Route = createFileRoute("/")({
   }),
 });
 
-type CenterView = "map" | "plant" | "capacity";
-
 function Index() {
   return (
     <GameStateProvider>
@@ -35,9 +30,8 @@ function Index() {
 function IndexBody() {
   const [simDay, setSimDay] = useState(11);
   const [simHour, setSimHour] = useState(6);
-  const [centerView, setCenterView] = useState<CenterView>("map");
   const [isPlaying, setIsPlaying] = useState(true);
-  const { tick, state, currentScenario, bestScenario } = useGameState();
+  const { tick, state, currentScenario } = useGameState();
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -82,80 +76,17 @@ function IndexBody() {
                 : `Dallas outage · ${state.assumptions.outageDurationDays}d · ${getStrategyLabel(currentScenario.mode)}`}
             </span>
           </div>
-          <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-            Best {getObjectiveLabel(state.objective)}: {getStrategyLabel(bestScenario.mode)}
-          </span>
         </div>
       </div>
 
       {/* Top bar with shared sim clock */}
       <TopBar simDay={simDay} simHour={simHour} isPlaying={isPlaying} onTogglePlay={() => setIsPlaying((p) => !p)} />
 
-      {/* Economy HUD */}
-      <EconomyBar />
-
       {/* Main content */}
       <div className="flex flex-1 min-h-0">
-        <KPIPanel />
-
         <div className="flex-1 flex flex-col min-w-0 relative">
-          <div className="flex items-center gap-1 px-4 pt-3 pb-1">
-            {([
-              { key: "map" as CenterView, label: "Network Map", icon: "🌐" },
-              { key: "plant" as CenterView, label: "Plant Comparison", icon: "🏭" },
-              { key: "capacity" as CenterView, label: "Future Capacity", icon: "📊" },
-            ]).map((v) => (
-              <button
-                key={v.key}
-                onClick={() => setCenterView(v.key)}
-                className={`px-3 py-1.5 text-[11px] rounded-md font-medium transition-colors ${
-                  centerView === v.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-                }`}
-              >
-                {v.icon} {v.label}
-              </button>
-            ))}
-          </div>
-
-          {centerView === "map" && (
-            <>
-              <NetworkMap simDay={simDay} simHour={simHour} />
-              <BuildPalette />
-            </>
-          )}
-          {centerView === "plant" && <InterPlantSimulation simDay={simDay} />}
-          {centerView === "capacity" && (
-            <div className="flex-1 flex items-center justify-center p-6">
-              <div className="card-surface p-6 max-w-xl w-full">
-                <div className="text-sm font-semibold text-foreground mb-2">Projected Network Outlook</div>
-                <div className="text-[11px] text-muted-foreground mb-4">
-                  {getStrategyLabel(currentScenario.mode)} under a {state.assumptions.outageDurationDays}-day outage with {state.assumptions.spareCapacityPct}% spare capacity.
-                </div>
-                <div className="flex items-end gap-2 h-40">
-                  {Array.from({ length: 12 }, (_, i) => {
-                    const base = 62 + i * 2.2;
-                    const lift = currentScenario.outcome.serviceLevelPct * 0.18 - currentScenario.outcome.recoveryDays * 0.7;
-                    const v = Math.max(48, Math.min(96, Math.round(base + lift)));
-                    return v;
-                  }).map((v, i) => (
-                    <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                      <div className="w-full rounded-sm relative overflow-hidden" style={{ height: `${v}%`, background: "var(--sn-green-dim)" }}>
-                        <div className="absolute inset-x-0 bottom-0 transition-all duration-500" style={{ background: "var(--sn-green)", height: "100%" }} />
-                      </div>
-                      <span className="text-[9px] font-mono text-muted-foreground">
-                        {["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"][i]}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-4 flex justify-between text-[10px] text-muted-foreground">
-                  <span>Projected margin impact: {currentScenario.outcome.marginDeltaPct.toFixed(1)}%</span>
-                  <span className="text-primary font-mono">Confidence: {Math.round(currentScenario.outcome.confidencePct)}%</span>
-                </div>
-              </div>
-            </div>
-          )}
+          <NetworkMap simDay={simDay} simHour={simHour} />
+          <BuildPalette />
         </div>
 
         <ChatPanel />

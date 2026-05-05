@@ -194,6 +194,7 @@ Recommended scope:
 - There is still meaningful UI and metric redundancy across the header, top bar, KPI rail, and economy strip.
 - Do not let redundancy cleanup block playability or command-center behavior.
 - After the 5-minute loop is solid, consolidate repeated metrics and reduce duplicate narrative panels.
+- Recent cleanup direction: remove self-explanatory labels that narrate the same state twice, especially around map overlays, status footers, and strategy callouts that do not help the room make a decision.
 
 ## Success Criteria
 
@@ -248,6 +249,7 @@ Status:
 - `[x]` Add shared state for assumptions, selected interventions, active strategy, and objective.
 - `[x]` Generate baseline, manual, and AI scenario variants from common state.
 - `[~]` Continue replacing remaining hardcoded UI reads with scenario-derived values.
+- `[~]` Continue subtracting redundant UI narration so the map, KPI strip, and command center each own a distinct job.
 
 Acceptance criteria:
 

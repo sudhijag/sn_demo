@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useGameState } from "@/lib/game-state";
 import {
+  BASELINE_ASSUMPTIONS,
   INTERVENTION_LIBRARY,
   formatMillions,
   generateExecutiveAnswer,
-  getObjectiveLabel,
   getStrategyLabel,
+  getChangedAssumptions,
   type InterventionType,
   type ResponseAction,
   type ScenarioAssumptions,
@@ -20,11 +21,11 @@ type PanelTab = "assumptions" | "plan" | "compare";
 const suggestions = [
   "What happens to Q3 margin if Dallas stays down 30 more days?",
   "Approve expedite freight but keep overflow capacity pending.",
-  "Switch objective to service level and tell me what changes.",
+  "Combine reroute volume, overtime, and protected SKUs into one response plan.",
 ];
 
 const strategyLabels: Record<StrategyMode, string> = {
-  baseline: "Do nothing",
+  baseline: "Control",
   manual: "Manual",
   ai: "AI",
 };
@@ -137,6 +138,50 @@ function AssumptionsTab({
   );
 }
 
+function AssumptionsSummary({
+  assumptions,
+  onOpen,
+}: {
+  assumptions: ScenarioAssumptions;
+  onOpen: () => void;
+}) {
+  const changes = getChangedAssumptions(assumptions);
+  const rows = [
+    `Outage ${assumptions.outageDurationDays}d`,
+    `Spare ${assumptions.spareCapacityPct}%`,
+    `Labor ${assumptions.laborAvailabilityPct}%`,
+    `${assumptions.freightMode} freight`,
+  ];
+
+  return (
+    <div className="card-surface px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[11px] font-semibold text-foreground">Active assumptions</div>
+        <button
+          onClick={onOpen}
+          className="w-7 h-7 rounded-md border border-border bg-secondary hover:bg-sn-surface-hover flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="Edit assumptions"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33h0A1.65 1.65 0 0 0 10.91 3H11a2 2 0 0 1 4 0h.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0A1.65 1.65 0 0 0 21 10.91V11a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {rows.map((row) => (
+          <Pill key={row}>{row}</Pill>
+        ))}
+      </div>
+      <div className="mt-2 text-[10px] text-muted-foreground leading-tight">
+        {changes.length > 0
+          ? `Changed from control: ${changes.join(" · ")}`
+          : `Matching control assumptions: ${BASELINE_ASSUMPTIONS.outageDurationDays}d outage, ${BASELINE_ASSUMPTIONS.spareCapacityPct}% spare capacity, ${BASELINE_ASSUMPTIONS.laborAvailabilityPct}% labor.`}
+      </div>
+    </div>
+  );
+}
+
 function ResponseActionCard({
   action,
   active,
@@ -221,17 +266,19 @@ function PlanTab({
 }
 
 function CompareTab() {
-  const { scenarios, bestScenario, state, setActiveScenario } = useGameState();
+  const { scenarios, currentScenario, setActiveScenario } = useGameState();
   const ordered = [scenarios.baseline, scenarios.manual, scenarios.ai];
 
   return (
     <div className="space-y-2">
       <div className="card-surface px-3 py-2 text-[10px] text-muted-foreground">
-        Objective: <span className="text-primary">{getObjectiveLabel(state.objective)}</span>. Best strategy highlighted below.
+        Historical control stays fixed. Mix manual and AI actions, then use these snapshots to see what the response is buying you against the replayed event.
       </div>
       {ordered.map((scenario) => {
-        const isBest = bestScenario.mode === scenario.mode;
-        const isActive = state.activeScenarioMode === scenario.mode;
+        const isActive = currentScenario.mode === scenario.mode;
+        const revenueDelta = scenario.outcome.revenueDelta - scenarios.baseline.outcome.revenueDelta;
+        const serviceDelta = scenario.outcome.serviceLevelPct - scenarios.baseline.outcome.serviceLevelPct;
+        const recoveryDelta = scenarios.baseline.outcome.recoveryDays - scenario.outcome.recoveryDays;
         return (
           <button
             key={scenario.mode}
@@ -240,16 +287,21 @@ function CompareTab() {
           >
             <div className="flex items-center justify-between gap-2">
               <div className="text-[11px] font-semibold text-foreground">{scenario.label}</div>
-              {isBest && <div className="text-[9px] font-mono uppercase tracking-[0.16em] text-primary">Best fit</div>}
+              <Pill tone={scenario.mode === "baseline" ? "neutral" : scenario.mode === "manual" ? "amber" : "green"}>
+                {scenario.mode === "baseline" ? "Historical control" : `${scenario.responsePlan.length} actions`}
+              </Pill>
             </div>
             <div className="grid grid-cols-2 gap-2 mt-2 text-[10px]">
-              <div><div className="text-muted-foreground">Margin</div><div className="font-mono text-foreground">{scenario.outcome.marginDeltaPct.toFixed(1)}%</div></div>
-              <div><div className="text-muted-foreground">Service</div><div className="font-mono text-foreground">{scenario.outcome.serviceLevelPct.toFixed(1)}%</div></div>
-              <div><div className="text-muted-foreground">Recovery</div><div className="font-mono text-foreground">{scenario.outcome.recoveryDays.toFixed(1)}d</div></div>
+              <div><div className="text-muted-foreground">Revenue</div><div className="font-mono text-foreground">{formatMillions(scenario.outcome.revenueDelta)}</div></div>
+              <div><div className="text-muted-foreground">Vs control</div><div className={`font-mono ${revenueDelta >= 0 ? "text-primary" : "text-sn-danger"}`}>{formatMillions(revenueDelta)}</div></div>
+              <div><div className="text-muted-foreground">Service vs control</div><div className={`font-mono ${serviceDelta >= 0 ? "text-primary" : "text-sn-danger"}`}>{formatDeltaPct(serviceDelta)}</div></div>
+              <div><div className="text-muted-foreground">Recovery vs control</div><div className={`font-mono ${recoveryDelta >= 0 ? "text-primary" : "text-sn-danger"}`}>{recoveryDelta.toFixed(1)}d</div></div>
               <div><div className="text-muted-foreground">Confidence</div><div className="font-mono text-foreground">{Math.round(scenario.outcome.confidencePct)}%</div></div>
             </div>
             <div className="mt-2 text-[10px] text-muted-foreground leading-tight">
-              {scenario.responsePlan.slice(0, 2).map((action) => action.title).join(" · ")}
+              {scenario.mode === "baseline"
+                ? "Replay the disruption with no intervention package applied."
+                : scenario.responsePlan.slice(0, 3).map((action) => action.title).join(" · ")}
             </div>
           </button>
         );
@@ -304,7 +356,6 @@ export default function ChatPanel() {
     currentScenario,
     scenarios,
     bestScenario,
-    setObjective,
     updateAssumption,
     toggleIntervention,
   } = useGameState();
@@ -346,7 +397,7 @@ export default function ChatPanel() {
     setInput("");
     setIsTyping(true);
 
-    const changed = tryHandleCommand(text.trim(), toggleIntervention, setObjective);
+    const changed = tryHandleCommand(text.trim(), toggleIntervention, () => undefined);
 
     setTimeout(() => {
       const answer = generateExecutiveAnswer(text.trim(), currentScenario, bestScenario);
@@ -379,42 +430,28 @@ export default function ChatPanel() {
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1 flex-wrap">
             <TabButton active={tab === "plan"} label="Response Plan" onClick={() => setTab("plan")} />
-            <TabButton active={tab === "compare"} label="Strategies" onClick={() => setTab("compare")} />
+            <TabButton active={tab === "compare"} label="Control vs Response" onClick={() => setTab("compare")} />
             <TabButton active={tab === "assumptions"} label="Assumptions" onClick={() => setTab("assumptions")} />
           </div>
           <Pill tone="green">{strategyLabels[currentScenario.mode]}</Pill>
         </div>
-        <div className="flex items-center gap-1 flex-wrap">
-          {([
-            { label: "Margin", value: "margin" },
-            { label: "Service", value: "service_level" },
-            { label: "Recovery", value: "recovery_time" },
-          ] as Array<{ label: string; value: ScenarioObjective }>).map((option) => (
-            <button
-              key={option.value}
-              onClick={() => setObjective(option.value)}
-              className={`px-2 py-1 rounded-md text-[10px] font-mono ${
-                state.objective === option.value ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
       </div>
 
-      <div className="p-3 border-b border-border">
+      <div className="p-3 border-b border-border space-y-2">
         <div className="card-surface px-3 py-2">
           <div className="flex items-center justify-between gap-2">
             <div className="text-[11px] font-semibold text-foreground">Live strategy brief</div>
             <Pill tone={bestScenario.mode === currentScenario.mode ? "green" : "amber"}>
-              Best {getObjectiveLabel(state.objective)}
+              {Math.round(currentScenario.outcome.confidencePct)}% confidence
             </Pill>
           </div>
           <div className="mt-1 text-[10px] text-muted-foreground leading-tight">
-            {currentScenario.responsePlan.length} actions in {getStrategyLabel(currentScenario.mode)}. Auto-runnable steps are executed by the command center; high-threshold steps can be approved or modified in chat.
+            {currentScenario.mode === "baseline"
+              ? "Control case is active. Use the response plan to start layering in actions from manual response and AI guidance."
+              : `${currentScenario.responsePlan.length} actions are active in ${getStrategyLabel(currentScenario.mode)}. Low-threshold steps can run automatically; high-threshold steps can be approved or modified in chat.`}
           </div>
         </div>
+        <AssumptionsSummary assumptions={state.assumptions} onOpen={() => setTab("assumptions")} />
       </div>
 
       <div className="p-3 border-b border-border max-h-[22rem] overflow-y-auto">

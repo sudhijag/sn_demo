@@ -1,11 +1,10 @@
 import { motion } from "framer-motion";
 import { useGameState } from "@/lib/game-state";
-import { formatDeltaPct, formatMillions, getObjectiveLabel, getStrategyLabel } from "@/lib/scenario";
+import { formatDeltaPct, formatMillions, getStrategyLabel } from "@/lib/scenario";
 
 export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { simDay: number; simHour: number; isPlaying: boolean; onTogglePlay: () => void }) {
-  const { state, scenarios, currentScenario, bestScenario } = useGameState();
+  const { state, scenarios, currentScenario } = useGameState();
   const baseline = scenarios.baseline;
-  const objectiveLabel = getObjectiveLabel(state.objective);
   const progressPct = Math.min(100, (state.lastTick / 12) * 100);
   const phaseOrder = ["baseline", "incident", "response", "recovery", "steady"];
   const activePhaseIndex = phaseOrder.indexOf(state.simulationPhase);
@@ -14,30 +13,27 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
     { label: "Baseline Set", time: "T0", phase: "baseline" },
     { label: "Equipment Failure", time: "T1", phase: "incident" },
     { label: currentScenario.mode === "baseline" ? "Observe Impact" : currentScenario.mode === "manual" ? "Manual Plan" : "AI Plan", time: "T2", phase: "response" },
-    { label: bestScenario.mode === currentScenario.mode ? "Winning Path" : "Tradeoff Review", time: "T3", phase: "recovery" },
+    { label: currentScenario.mode === "baseline" ? "Impact Window" : "Plan Taking Effect", time: "T3", phase: "recovery" },
     { label: "Steady State", time: "T4", phase: "steady" },
   ];
 
   const plMetrics = [
     {
       label: "Revenue Impact",
-      left: formatMillions(baseline.outcome.revenueDelta),
-      right: formatMillions(currentScenario.outcome.revenueDelta),
-      delta: formatMillions(currentScenario.outcome.revenueDelta - baseline.outcome.revenueDelta),
+      primary: formatMillions(currentScenario.outcome.revenueDelta),
+      reference: `vs control ${formatMillions(currentScenario.outcome.revenueDelta - baseline.outcome.revenueDelta)}`,
       positive: currentScenario.outcome.revenueDelta > baseline.outcome.revenueDelta,
     },
     {
       label: "Recovery (days)",
-      left: baseline.outcome.recoveryDays.toFixed(1),
-      right: currentScenario.outcome.recoveryDays.toFixed(1),
-      delta: `${(baseline.outcome.recoveryDays - currentScenario.outcome.recoveryDays).toFixed(1)}d`,
+      primary: `${currentScenario.outcome.recoveryDays.toFixed(1)}d`,
+      reference: `vs control ${(baseline.outcome.recoveryDays - currentScenario.outcome.recoveryDays).toFixed(1)}d`,
       positive: currentScenario.outcome.recoveryDays < baseline.outcome.recoveryDays,
     },
     {
       label: "Service Level",
-      left: `${baseline.outcome.serviceLevelPct.toFixed(1)}%`,
-      right: `${currentScenario.outcome.serviceLevelPct.toFixed(1)}%`,
-      delta: formatDeltaPct(currentScenario.outcome.serviceLevelPct - baseline.outcome.serviceLevelPct),
+      primary: `${currentScenario.outcome.serviceLevelPct.toFixed(1)}%`,
+      reference: `vs control ${formatDeltaPct(currentScenario.outcome.serviceLevelPct - baseline.outcome.serviceLevelPct)}`,
       positive: currentScenario.outcome.serviceLevelPct >= baseline.outcome.serviceLevelPct,
     },
   ];
@@ -119,15 +115,11 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
 
       <div className="flex items-center gap-4 border-l border-border pl-5">
         {plMetrics.map((m) => (
-          <div key={m.label} className="text-center">
+          <div key={m.label} className="min-w-[124px]">
             <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{m.label}</div>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-xs font-mono text-muted-foreground">{m.left}</span>
-              <span className="text-[10px] text-muted-foreground">→</span>
-              <span className="text-xs font-mono text-primary">{m.right}</span>
-              <span className={`text-[10px] font-mono font-bold ${m.positive ? "text-primary" : "text-sn-danger"}`}>
-                {m.delta}
-              </span>
+            <div className="mt-0.5 text-sm font-mono text-foreground">{m.primary}</div>
+            <div className={`text-[10px] font-mono mt-1 ${m.positive ? "text-primary" : "text-sn-danger"}`}>
+              {m.reference}
             </div>
           </div>
         ))}
@@ -135,10 +127,8 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
 
       <div className="flex items-center gap-2 border-l border-border pl-5">
         <div className="text-right">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{objectiveLabel}</div>
-          <div className="text-[11px] font-mono text-primary">
-            Best: {getStrategyLabel(bestScenario.mode)}
-          </div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Current plan</div>
+          <div className="text-[11px] font-mono text-primary">{getStrategyLabel(currentScenario.mode)}</div>
         </div>
         <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-secondary hover:bg-sn-surface-hover text-xs font-medium text-foreground transition-colors border border-border">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
