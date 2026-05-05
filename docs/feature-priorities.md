@@ -189,6 +189,12 @@ Recommended scope:
 - Do not make assumptions, interventions, and comparison each own separate calculation logic.
 - Do not bury key scenario state inside component-local state.
 
+## Deferred Cleanup
+
+- There is still meaningful UI and metric redundancy across the header, top bar, KPI rail, and economy strip.
+- Do not let redundancy cleanup block playability or command-center behavior.
+- After the 5-minute loop is solid, consolidate repeated metrics and reduce duplicate narrative panels.
+
 ## Success Criteria
 
 We should be able to run a demo where the audience can say:
@@ -294,6 +300,7 @@ Status:
 - `[ ]` Replace static outage and recovery banners with scenario-aware messaging.
 - `[x]` Make the map, network throughput, and KPI summaries reflect active assumptions and strategy.
 - `[ ]` Make the center panel tell a clearer before/after story without requiring chat.
+- `[ ]` Reduce redundant metrics once the end-to-end loop is stable.
 
 Acceptance criteria:
 
@@ -352,6 +359,31 @@ Suggested commit checkpoints:
 - `feat: add explanation and confidence layer`
 - `feat: export executive roi summary`
 
+### Phase 6: Command Center Depth
+
+Goal:
+Make chat the main delegation and control surface for adapting the strategy beyond the rigid baseline/manual/AI framing.
+
+Status:
+
+- `[x]` Keep chat visible instead of hiding ask behind a tab.
+- `[x]` Represent response strategies as concrete action checklists rather than only KPI deltas.
+- `[x]` Introduce action thresholds and autonomy levels so some steps can run automatically while others require approval.
+- `[ ]` Let chat approve, modify, or reject specific response actions in a more structured way.
+- `[ ]` Allow chat to reshape intervention bundles without forcing the user through rigid UI.
+- `[ ]` Add stronger conversational memory and command-center style follow-through.
+
+Acceptance criteria:
+
+- Chat feels like an always-available command center, not a side demo.
+- Response plans are legible as concrete actions, owners, and approval thresholds.
+- The user can delegate and refine strategy through conversation, not just select from three rigid choices.
+
+Suggested commit checkpoints:
+
+- `feat: make chat an always-visible command center`
+- `feat: support approval and modification through chat`
+
 ## Near-Term Working Sequence
 
 This is the intended order for the next implementation passes:
@@ -360,8 +392,9 @@ This is the intended order for the next implementation passes:
 2. Remove the highest-value remaining hardcoded metrics and banners.
 3. Make the selected strategy visibly influence the network map and top-level summary.
 4. Add lightweight scenario versioning so we can preserve baseline/manual/AI and branch from them cleanly.
-5. Tighten the executive console output formatting and follow-up behavior.
-6. Add export and trust-layer features only after the main five-minute loop feels crisp.
+5. Deepen the command-center workflow so chat can approve and modify actions more naturally.
+6. Tighten the executive console output formatting and follow-up behavior.
+7. Add export and trust-layer features only after the main five-minute loop feels crisp.
 
 ## Working Principles While Implementing
 

@@ -43,18 +43,34 @@ export interface ScenarioOutcome {
   summary: string;
 }
 
+export type ActionThreshold = "H" | "M" | "L";
+export type ActionAutomation = "auto" | "approve" | "modify";
+
+export interface ResponseAction {
+  id: string;
+  interventionType: InterventionType;
+  title: string;
+  details: string;
+  threshold: ActionThreshold;
+  automation: ActionAutomation;
+  owner: "command_center" | "supply_chain" | "plant_ops" | "logistics";
+  status: "queued" | "auto-running" | "awaiting-approval";
+}
+
 export interface ScenarioVersion {
   id: StrategyMode;
   label: string;
   mode: StrategyMode;
   assumptions: ScenarioAssumptions;
   enabledInterventions: InterventionType[];
+  responsePlan: ResponseAction[];
   outcome: ScenarioOutcome;
 }
 
 export interface ExecutiveAnswer {
   summary: string;
   recommendedActions: string[];
+  responseChecklist: string[];
   estimatedImpact: string[];
   assumptions: string[];
   confidence: string;
@@ -269,6 +285,7 @@ export function buildScenarioVersions(
       mode: "baseline",
       assumptions,
       enabledInterventions: [],
+      responsePlan: buildResponsePlan([], "baseline", assumptions),
       outcome: computeScenarioOutcome(assumptions, [], "baseline"),
     },
     manual: {
@@ -277,6 +294,7 @@ export function buildScenarioVersions(
       mode: "manual",
       assumptions,
       enabledInterventions: selectedInterventions,
+      responsePlan: buildResponsePlan(selectedInterventions, "manual", assumptions),
       outcome: computeScenarioOutcome(assumptions, selectedInterventions, "manual"),
     },
     ai: {
@@ -285,6 +303,7 @@ export function buildScenarioVersions(
       mode: "ai",
       assumptions,
       enabledInterventions: aiInterventions,
+      responsePlan: buildResponsePlan(aiInterventions, "ai", assumptions),
       outcome: computeScenarioOutcome(assumptions, aiInterventions, "ai"),
     },
   };
@@ -337,6 +356,106 @@ export function getStrategyLabel(mode: StrategyMode) {
   }
 }
 
+function getActionTemplate(type: InterventionType, assumptions: ScenarioAssumptions) {
+  switch (type) {
+    case "reroute_volume":
+      return {
+        title: "Reroute Dallas volume",
+        details: `Shift constrained Dallas output into Phoenix, Atlanta, and Los Angeles for the next ${Math.min(assumptions.outageDurationDays, 14)} days.`,
+        owner: "logistics" as const,
+      };
+    case "add_overtime":
+      return {
+        title: "Increase overtime coverage",
+        details: `Increase receiving-plant labor coverage while labor availability is ${assumptions.laborAvailabilityPct}%.`,
+        owner: "plant_ops" as const,
+      };
+    case "expedite_freight":
+      return {
+        title: "Expedite freight lanes",
+        details: `Upgrade key inbound and cross-country lanes while supplier lead time is ${assumptions.supplierLeadTimeDays} days.`,
+        owner: "logistics" as const,
+      };
+    case "prioritize_skus":
+      return {
+        title: "Protect high-priority SKUs",
+        details: `Protect ${assumptions.skuPriority.replace("_", " ")} assortments and defer lower-priority volume.`,
+        owner: "command_center" as const,
+      };
+    case "open_overflow_capacity":
+      return {
+        title: "Open overflow capacity",
+        details: "Bring overflow or partner capacity online to preserve service-level commitments.",
+        owner: "supply_chain" as const,
+      };
+    case "shift_labor":
+      return {
+        title: "Shift labor to constrained sites",
+        details: "Redeploy labor from lower-priority plants into the constrained corridor.",
+        owner: "plant_ops" as const,
+      };
+  }
+}
+
+function getActionControls(type: InterventionType, mode: StrategyMode): Pick<ResponseAction, "threshold" | "automation" | "status"> {
+  if (mode === "baseline") {
+    return { threshold: "L", automation: "modify", status: "queued" };
+  }
+
+  if (mode === "manual") {
+    const highApproval = type === "open_overflow_capacity" || type === "expedite_freight";
+    return {
+      threshold: highApproval ? "H" : type === "reroute_volume" ? "M" : "L",
+      automation: highApproval ? "approve" : "modify",
+      status: highApproval ? "awaiting-approval" : "queued",
+    };
+  }
+
+  if (type === "reroute_volume" || type === "prioritize_skus" || type === "shift_labor") {
+    return { threshold: "M", automation: "auto", status: "auto-running" };
+  }
+
+  if (type === "expedite_freight" || type === "open_overflow_capacity") {
+    return { threshold: "H", automation: "approve", status: "awaiting-approval" };
+  }
+
+  return { threshold: "L", automation: "modify", status: "queued" };
+}
+
+export function buildResponsePlan(
+  interventions: InterventionType[],
+  mode: StrategyMode,
+  assumptions: ScenarioAssumptions,
+): ResponseAction[] {
+  if (mode === "baseline") {
+    return [
+      {
+        id: "baseline-observe",
+        interventionType: "reroute_volume",
+        title: "Observe baseline network",
+        details: "Hold the current operating plan and wait for the incident trigger before taking action.",
+        threshold: "L",
+        automation: "modify",
+        owner: "command_center",
+        status: "queued",
+      },
+    ];
+  }
+
+  return interventions.map((type) => {
+    const template = getActionTemplate(type, assumptions);
+    const controls = getActionControls(type, mode);
+    return {
+      id: `${mode}-${type}`,
+      interventionType: type,
+      title: template.title,
+      details: template.details,
+      owner: template.owner,
+      ...controls,
+    };
+  });
+}
+
 export function generateExecutiveAnswer(
   question: string,
   scenario: ScenarioVersion,
@@ -349,6 +468,7 @@ export function generateExecutiveAnswer(
   return {
     summary: `${question.includes("Q3 margin") ? "Q3 margin" : "This scenario"} is projected at ${outcome.marginDeltaPct.toFixed(1)}% versus plan with recovery in ${outcome.recoveryDays.toFixed(1)} days. ${bestIsCurrent ? "Current strategy is already the strongest option." : `${best.label} is outperforming the current strategy on the current decision objective.`}`,
     recommendedActions: actionLabels.length > 0 ? actionLabels : ["No mitigation actions selected yet"],
+    responseChecklist: scenario.responsePlan.map((action) => `${action.threshold} · ${action.automation} · ${action.title}`),
     estimatedImpact: [
       `Revenue impact ${formatMillions(outcome.revenueDelta)}`,
       `Service level ${outcome.serviceLevelPct.toFixed(1)}%`,

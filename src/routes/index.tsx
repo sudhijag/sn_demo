@@ -10,6 +10,7 @@ import BuildPalette from "../components/BuildPalette";
 import PlantDetail from "../components/PlantDetail";
 import { GameStateProvider, useGameState } from "@/lib/game-state";
 import { getObjectiveLabel, getStrategyLabel } from "@/lib/scenario";
+import { SIM_TICK_MS } from "@/lib/sim-config";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -49,7 +50,7 @@ function IndexBody() {
         return h + 1;
       });
       tick();
-    }, 4000);
+    }, SIM_TICK_MS);
     return () => clearInterval(interval);
   }, [isPlaying, tick]);
 
