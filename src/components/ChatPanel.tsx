@@ -1,58 +1,42 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useGameState } from "@/lib/game-state";
 import {
   BASELINE_ASSUMPTIONS,
-  INTERVENTION_LIBRARY,
   formatMillions,
   generateExecutiveAnswer,
-  getStrategyLabel,
+  generateTaskExplanation,
   getChangedAssumptions,
-  type InterventionType,
-  type ResponseAction,
+  isSafeTask,
+  sortPlanTasks,
+  type PlanTask,
   type ScenarioAssumptions,
-  type ScenarioObjective,
-  type StrategyMode,
+  type TaskResolution,
 } from "@/lib/scenario";
 
 type Message = { role: "user" | "assistant"; content: string };
-type PanelTab = "assumptions" | "plan" | "compare";
 
-const suggestions = [
-  "What happens to Q3 margin if Dallas stays down 30 more days?",
-  "Approve expedite freight but keep overflow capacity pending.",
-  "Combine reroute volume, overtime, and protected SKUs into one response plan.",
+const planSuggestions = [
+  "Add task: Call supplier X and ask for a 7-day lead-time reduction.",
+  "Reassign this task to AI.",
+  "Update fix: keep overflow capacity pending until service drops below 90%.",
 ];
 
-const strategyLabels: Record<StrategyMode, string> = {
-  baseline: "Control",
-  manual: "Manual",
-  ai: "AI",
-};
-
-function TabButton({
-  active,
-  label,
-  onClick,
+function Pill({
+  children,
+  tone = "neutral",
 }: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
+  children: React.ReactNode;
+  tone?: "neutral" | "green" | "amber" | "red";
 }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-2.5 py-1.5 rounded-md text-[10px] font-medium transition-colors ${
-        active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
-
-function Pill({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "neutral" | "green" | "amber" }) {
-  const cls = tone === "green" ? "text-primary bg-primary/10" : tone === "amber" ? "text-sn-warning bg-sn-warning/10" : "text-muted-foreground bg-secondary";
+  const cls =
+    tone === "green"
+      ? "text-primary bg-primary/10"
+      : tone === "amber"
+        ? "text-sn-warning bg-sn-warning/10"
+        : tone === "red"
+          ? "text-sn-danger bg-sn-danger/10"
+          : "text-muted-foreground bg-secondary";
   return <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono uppercase tracking-[0.12em] ${cls}`}>{children}</span>;
 }
 
@@ -118,7 +102,7 @@ function SelectField<T extends string>({
   );
 }
 
-function AssumptionsTab({
+function AssumptionsEditor({
   assumptions,
   updateAssumption,
 }: {
@@ -182,213 +166,153 @@ function AssumptionsSummary({
   );
 }
 
-function ResponseActionCard({
-  action,
-  active,
-  onToggle,
-}: {
-  action: ResponseAction;
-  active: boolean;
-  onToggle?: () => void;
-}) {
-  return (
-    <button
-      onClick={onToggle}
-      disabled={!onToggle}
-      className={`w-full text-left card-surface px-3 py-2 border transition-colors ${active ? "border-primary bg-primary/5" : "border-border"} ${onToggle ? "" : "cursor-default"}`}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <div className="text-[11px] font-semibold text-foreground">{action.title}</div>
-          <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">{action.details}</div>
-        </div>
-        {onToggle && <div className={`w-2 h-2 rounded-full mt-1 ${active ? "bg-primary" : "bg-muted"}`} />}
-      </div>
-      <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-        <Pill tone={action.automation === "auto" ? "green" : action.automation === "approve" ? "amber" : "neutral"}>{action.automation}</Pill>
-        <Pill>{action.threshold}</Pill>
-        <Pill>{action.owner.replace("_", " ")}</Pill>
-        <Pill tone={action.status === "auto-running" ? "green" : action.status === "awaiting-approval" ? "amber" : "neutral"}>{action.status}</Pill>
-      </div>
-    </button>
-  );
+function resolutionTone(resolution: TaskResolution) {
+  if (resolution === "awaiting-approval" || resolution === "modified") return "amber";
+  if (resolution === "rejected") return "red";
+  if (resolution === "completed" || resolution === "auto-approved" || resolution === "user-approved") return "green";
+  return "neutral";
 }
 
-function PlanTab({
-  activeTypes,
-  toggleIntervention,
-  projectedMargin,
-  currentPlan,
-  aiPlan,
-}: {
-  activeTypes: InterventionType[];
-  toggleIntervention: (type: InterventionType) => void;
-  projectedMargin: number;
-  currentPlan: ResponseAction[];
-  aiPlan: ResponseAction[];
-}) {
-  return (
-    <div className="space-y-3">
-      <div className="card-surface px-3 py-2 text-[10px] text-muted-foreground">
-        Manual plan margin impact: <span className="font-mono text-primary">{projectedMargin.toFixed(1)}%</span>. Use chat to approve, modify, or ask the command center for a better action mix.
-      </div>
-      <div className="space-y-2">
-        <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">Manual response builder</div>
-        {INTERVENTION_LIBRARY.map((intervention) => {
-          const active = activeTypes.includes(intervention.type);
-          const mapped = currentPlan.find((item) => item.interventionType === intervention.type);
-          return (
-            <div key={intervention.type} className="space-y-1.5">
-              {mapped ? (
-                <ResponseActionCard action={mapped} active={active} onToggle={() => toggleIntervention(intervention.type)} />
-              ) : (
-                <button
-                  onClick={() => toggleIntervention(intervention.type)}
-                  className="w-full text-left card-surface px-3 py-2 border border-border transition-colors"
-                >
-                  <div className="text-[11px] font-semibold text-foreground">{intervention.label}</div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5">{intervention.description}</div>
-                  <div className="mt-2 text-[9.5px] font-mono text-primary">{formatMillions(intervention.estimatedCost)}</div>
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <div className="space-y-2">
-        <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">AI-optimized runbook</div>
-        {aiPlan.map((action) => (
-          <ResponseActionCard key={action.id} action={action} active />
-        ))}
-      </div>
-    </div>
-  );
+function formatResolution(resolution: TaskResolution) {
+  return resolution.replace("-", " ");
 }
 
-function CompareTab() {
-  const { scenarios, currentScenario, setActiveScenario } = useGameState();
-  const ordered = [scenarios.baseline, scenarios.manual, scenarios.ai];
-
-  return (
-    <div className="space-y-2">
-      <div className="card-surface px-3 py-2 text-[10px] text-muted-foreground">
-        Historical control stays fixed. Mix manual and AI actions, then use these snapshots to see what the response is buying you against the replayed event.
-      </div>
-      {ordered.map((scenario) => {
-        const isActive = currentScenario.mode === scenario.mode;
-        const revenueDelta = scenario.outcome.revenueDelta - scenarios.baseline.outcome.revenueDelta;
-        const serviceDelta = scenario.outcome.serviceLevelPct - scenarios.baseline.outcome.serviceLevelPct;
-        const recoveryDelta = scenarios.baseline.outcome.recoveryDays - scenario.outcome.recoveryDays;
-        return (
-          <button
-            key={scenario.mode}
-            onClick={() => setActiveScenario(scenario.mode)}
-            className={`w-full text-left card-surface px-3 py-2 border transition-colors ${isActive ? "border-primary" : "border-border"}`}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-[11px] font-semibold text-foreground">{scenario.label}</div>
-              <Pill tone={scenario.mode === "baseline" ? "neutral" : scenario.mode === "manual" ? "amber" : "green"}>
-                {scenario.mode === "baseline" ? "Historical control" : `${scenario.responsePlan.length} actions`}
-              </Pill>
-            </div>
-            <div className="grid grid-cols-2 gap-2 mt-2 text-[10px]">
-              <div><div className="text-muted-foreground">Revenue</div><div className="font-mono text-foreground">{formatMillions(scenario.outcome.revenueDelta)}</div></div>
-              <div><div className="text-muted-foreground">Vs control</div><div className={`font-mono ${revenueDelta >= 0 ? "text-primary" : "text-sn-danger"}`}>{formatMillions(revenueDelta)}</div></div>
-              <div><div className="text-muted-foreground">Service vs control</div><div className={`font-mono ${serviceDelta >= 0 ? "text-primary" : "text-sn-danger"}`}>{formatDeltaPct(serviceDelta)}</div></div>
-              <div><div className="text-muted-foreground">Recovery vs control</div><div className={`font-mono ${recoveryDelta >= 0 ? "text-primary" : "text-sn-danger"}`}>{recoveryDelta.toFixed(1)}d</div></div>
-              <div><div className="text-muted-foreground">Confidence</div><div className="font-mono text-foreground">{Math.round(scenario.outcome.confidencePct)}%</div></div>
-            </div>
-            <div className="mt-2 text-[10px] text-muted-foreground leading-tight">
-              {scenario.mode === "baseline"
-                ? "Replay the disruption with no intervention package applied."
-                : scenario.responsePlan.slice(0, 3).map((action) => action.title).join(" · ")}
-            </div>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function tryHandleCommand(
+function parsePlanEditCommand(
   text: string,
-  toggleIntervention: (type: InterventionType) => void,
-  setObjective: (objective: ScenarioObjective) => void,
+  selectedTask: PlanTask | null,
+  addPlanTask: (title: string, details?: string) => void,
+  removePlanTask: (id: string) => void,
+  modifyTask: (task: PlanTask, patch?: Partial<PlanTask>) => void,
+  reassignTask: (task: PlanTask, assignee: "ai" | "human") => void,
 ) {
   const lower = text.toLowerCase();
-  let changed = false;
 
-  const toggles: Array<{ needle: string; type: InterventionType }> = [
-    { needle: "reroute", type: "reroute_volume" },
-    { needle: "overtime", type: "add_overtime" },
-    { needle: "expedite", type: "expedite_freight" },
-    { needle: "sku", type: "prioritize_skus" },
-    { needle: "overflow", type: "open_overflow_capacity" },
-    { needle: "shift labor", type: "shift_labor" },
-  ];
-
-  if (lower.includes("objective") || lower.includes("switch to")) {
-    if (lower.includes("service")) {
-      setObjective("service_level");
-      changed = true;
-    } else if (lower.includes("recovery")) {
-      setObjective("recovery_time");
-      changed = true;
-    } else if (lower.includes("margin")) {
-      setObjective("margin");
-      changed = true;
+  if (lower.startsWith("add task")) {
+    const next = text.split(":")[1]?.trim() || text.replace(/add task/i, "").trim();
+    if (next) {
+      addPlanTask(next, next);
+      return `Added a new plan task: ${next}.`;
     }
   }
 
-  for (const toggle of toggles) {
-    if (lower.includes(toggle.needle)) {
-      toggleIntervention(toggle.type);
-      changed = true;
+  if (lower.includes("remove task") && selectedTask) {
+    removePlanTask(selectedTask.id);
+    return `Removed ${selectedTask.title} from the active response plan.`;
+  }
+
+  if ((lower.includes("reassign") || lower.includes("assign")) && selectedTask) {
+    if (lower.includes("ai")) {
+      reassignTask(selectedTask, "ai");
+      return `${selectedTask.title} is now assigned back to AI handling.`;
+    }
+    if (lower.includes("human") || lower.includes("me")) {
+      reassignTask(selectedTask, "human");
+      return `${selectedTask.title} is now assigned to human review.`;
     }
   }
 
-  return changed;
+  if ((lower.includes("update fix") || lower.includes("change fix") || lower.includes("suggested fix")) && selectedTask) {
+    const nextFix = text.split(":")[1]?.trim();
+    if (nextFix) {
+      modifyTask(selectedTask, { suggestedFix: nextFix, details: nextFix });
+      return `Updated the suggested fix for ${selectedTask.title}.`;
+    }
+  }
+
+  return null;
+}
+
+function parseTaskCommand(
+  text: string,
+  selectedTask: PlanTask | null,
+  approveTask: (task: PlanTask) => void,
+  rejectTask: (task: PlanTask) => void,
+  modifyTask: (task: PlanTask, patch?: Partial<PlanTask>) => void,
+) {
+  if (!selectedTask) return null;
+  const lower = text.toLowerCase();
+
+  if (lower.includes("approve")) {
+    approveTask(selectedTask);
+    return `Approved ${selectedTask.title}.`;
+  }
+  if (lower.includes("reject")) {
+    rejectTask(selectedTask);
+    return `Rejected ${selectedTask.title}.`;
+  }
+  if (lower.includes("modify")) {
+    const nextFix = text.split(":")[1]?.trim();
+    modifyTask(selectedTask, nextFix ? { suggestedFix: nextFix, details: nextFix } : undefined);
+    return nextFix
+      ? `Modified ${selectedTask.title} with an updated suggested fix.`
+      : `Marked ${selectedTask.title} for modification.`;
+  }
+
+  return null;
 }
 
 export default function ChatPanel() {
   const {
     state,
     currentScenario,
-    scenarios,
     bestScenario,
+    activeResponsePlan,
+    selectedTask,
     updateAssumption,
-    toggleIntervention,
+    setSelectedTask,
+    setPlanEditMode,
+    approveTask,
+    autoApproveSafeTasks,
+    rejectTask,
+    modifyTask,
+    addPlanTask,
+    removePlanTask,
+    reassignTask,
   } = useGameState();
-  const [tab, setTab] = useState<PanelTab>("plan");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [showAssumptionsEditor, setShowAssumptionsEditor] = useState(false);
+  const [showCompleted, setShowCompleted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const seededAnswer = useMemo(
+  const sortedTasks = useMemo(
+    () => sortPlanTasks(activeResponsePlan.tasks),
+    [activeResponsePlan.tasks],
+  );
+  const openTasks = sortedTasks.filter((task) => task.resolution !== "auto-approved" && task.resolution !== "completed");
+  const completedTasks = sortedTasks.filter((task) => task.resolution === "auto-approved" || task.resolution === "completed");
+  const safeTasks = openTasks.filter((task) => isSafeTask(task));
+  const fallbackAnswer = useMemo(
     () => generateExecutiveAnswer("What happens to Q3 margin if Dallas is down 30 more days?", currentScenario, bestScenario),
     [currentScenario, bestScenario],
   );
 
   useEffect(() => {
-    setMessages([
-      {
-        role: "assistant",
-        content: [
-          seededAnswer.summary,
-          `Recommended: ${seededAnswer.recommendedActions.join(", ")}.`,
-          `Checklist: ${seededAnswer.responseChecklist.join(" · ")}.`,
-          `Impact: ${seededAnswer.estimatedImpact.join(" · ")}.`,
-          `Assumptions: ${seededAnswer.assumptions.join("; ")}.`,
-          seededAnswer.confidence,
-        ].join("\n\n"),
-      },
-    ]);
-  }, [seededAnswer]);
+    const assistantMessage = state.planEditMode
+      ? [
+          `${activeResponsePlan.title} is in plan-edit mode.`,
+          "You can add a task, remove the selected task, reassign it between AI and human review, or change the suggested fix.",
+          `Open tasks: ${openTasks.length}. Completed tasks: ${completedTasks.length}.`,
+        ].join("\n\n")
+      : selectedTask
+        ? generateTaskExplanation(selectedTask, currentScenario)
+        : [
+            activeResponsePlan.summary,
+            `Select a task from the queue to review it in detail.`,
+            `Current scenario: ${fallbackAnswer.summary}`,
+          ].join("\n\n");
+
+    setMessages([{ role: "assistant", content: assistantMessage }]);
+  }, [activeResponsePlan.summary, completedTasks.length, currentScenario, fallbackAnswer.summary, openTasks.length, selectedTask, state.planEditMode]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
+
+  const pushAssistant = (content: string) => {
+    setMessages((prev) => [...prev, { role: "assistant", content }]);
+  };
 
   const send = (text: string) => {
     if (!text.trim()) return;
@@ -397,78 +321,180 @@ export default function ChatPanel() {
     setInput("");
     setIsTyping(true);
 
-    const changed = tryHandleCommand(text.trim(), toggleIntervention, () => undefined);
-
     setTimeout(() => {
-      const answer = generateExecutiveAnswer(text.trim(), currentScenario, bestScenario);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: [
-            changed ? "Command Center updated the working plan from your instruction." : answer.summary,
+      const planEditMessage = state.planEditMode
+        ? parsePlanEditCommand(text.trim(), selectedTask, addPlanTask, removePlanTask, modifyTask, reassignTask)
+        : null;
+      const taskMessage = state.planEditMode
+        ? null
+        : parseTaskCommand(text.trim(), selectedTask, approveTask, rejectTask, modifyTask);
+
+      if (planEditMessage) {
+        pushAssistant(planEditMessage);
+      } else if (taskMessage) {
+        pushAssistant(taskMessage);
+      } else if (!state.planEditMode && selectedTask && text.toLowerCase().includes("why")) {
+        pushAssistant(generateTaskExplanation(selectedTask, currentScenario));
+      } else {
+        const answer = generateExecutiveAnswer(text.trim(), currentScenario, bestScenario);
+        pushAssistant(
+          [
+            answer.summary,
             `Recommended actions: ${answer.recommendedActions.join(", ")}.`,
-            `Checklist: ${answer.responseChecklist.join(" · ")}.`,
             `Estimated impact: ${answer.estimatedImpact.join(" · ")}.`,
-            `Assumptions: ${answer.assumptions.join("; ")}.`,
             `${answer.confidence}.`,
-            `Next questions: ${answer.followUps.join(" ")}`,
           ].join("\n\n"),
-        },
-      ]);
+        );
+      }
+
       setIsTyping(false);
-    }, 700);
+    }, 500);
   };
 
+  const placeholder = state.planEditMode
+    ? "Add a task, remove the selected task, reassign it, or update the fix..."
+    : selectedTask
+      ? `Ask, approve, or modify ${selectedTask.title.toLowerCase()}...`
+      : "Select a task from the queue or ask about the current response plan...";
+
   return (
-    <div className="w-[29rem] flex flex-col border-l border-border bg-card/40">
-      <div className="px-4 py-3 border-b border-border space-y-2">
+    <div className="w-[31rem] flex flex-col border-l border-border bg-card/40">
+      <div className="px-4 py-3 border-b border-border space-y-3">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-primary pulse-dot" />
           <span className="text-xs font-semibold text-foreground">COMMAND CENTER</span>
         </div>
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1 flex-wrap">
-            <TabButton active={tab === "plan"} label="Response Plan" onClick={() => setTab("plan")} />
-            <TabButton active={tab === "compare"} label="Control vs Response" onClick={() => setTab("compare")} />
-            <TabButton active={tab === "assumptions"} label="Assumptions" onClick={() => setTab("assumptions")} />
-          </div>
-          <Pill tone="green">{strategyLabels[currentScenario.mode]}</Pill>
-        </div>
-      </div>
 
-      <div className="p-3 border-b border-border space-y-2">
         <div className="card-surface px-3 py-2">
           <div className="flex items-center justify-between gap-2">
-            <div className="text-[11px] font-semibold text-foreground">Live strategy brief</div>
-            <Pill tone={bestScenario.mode === currentScenario.mode ? "green" : "amber"}>
-              {Math.round(currentScenario.outcome.confidencePct)}% confidence
-            </Pill>
+            <div>
+              <div className="text-[11px] font-semibold text-foreground">{activeResponsePlan.title}</div>
+              <div className="mt-1 text-[10px] text-muted-foreground leading-tight">{activeResponsePlan.summary}</div>
+            </div>
+            <button
+              onClick={() => setPlanEditMode(!state.planEditMode)}
+              className="px-2.5 py-1.5 rounded-md border border-border bg-secondary hover:bg-sn-surface-hover text-[10px] font-medium text-foreground transition-colors"
+            >
+              {state.planEditMode ? "Done Editing" : "Edit Plan"}
+            </button>
           </div>
-          <div className="mt-1 text-[10px] text-muted-foreground leading-tight">
-            {currentScenario.mode === "baseline"
-              ? "Control case is active. Use the response plan to start layering in actions from manual response and AI guidance."
-              : `${currentScenario.responsePlan.length} actions are active in ${getStrategyLabel(currentScenario.mode)}. Low-threshold steps can run automatically; high-threshold steps can be approved or modified in chat.`}
+          <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+            <Pill tone="amber">{openTasks.length} open</Pill>
+            <Pill tone="green">{completedTasks.length} completed</Pill>
+            <Pill>{Math.round(currentScenario.outcome.confidencePct)}% confidence</Pill>
           </div>
         </div>
-        <AssumptionsSummary assumptions={state.assumptions} onOpen={() => setTab("assumptions")} />
+
+        <AssumptionsSummary assumptions={state.assumptions} onOpen={() => setShowAssumptionsEditor((v) => !v)} />
+        {showAssumptionsEditor && <AssumptionsEditor assumptions={state.assumptions} updateAssumption={updateAssumption} />}
       </div>
 
-      <div className="p-3 border-b border-border max-h-[22rem] overflow-y-auto">
-        {tab === "assumptions" && <AssumptionsTab assumptions={state.assumptions} updateAssumption={updateAssumption} />}
-        {tab === "plan" && (
-          <PlanTab
-            activeTypes={state.selectedInterventions}
-            toggleIntervention={toggleIntervention}
-            projectedMargin={scenarios.manual.outcome.marginDeltaPct}
-            currentPlan={scenarios.manual.responsePlan}
-            aiPlan={scenarios.ai.responsePlan}
-          />
-        )}
-        {tab === "compare" && <CompareTab />}
+      <div className="px-3 py-3 border-b border-border space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">Task Queue</div>
+          <button
+            onClick={autoApproveSafeTasks}
+            disabled={safeTasks.length === 0}
+            className="px-2.5 py-1.5 rounded-md bg-primary text-primary-foreground text-[10px] font-medium disabled:opacity-30 hover:opacity-90 transition-opacity"
+          >
+            Auto-approve safe tasks
+          </button>
+        </div>
+
+        <div className="card-surface overflow-hidden">
+          <div className="grid grid-cols-[1.4fr_0.8fr_0.8fr_1.2fr_0.7fr] gap-3 px-3 py-2 text-[9px] font-mono uppercase tracking-[0.12em] text-muted-foreground border-b border-border">
+            <div>Task</div>
+            <div>Owner</div>
+            <div>Status</div>
+            <div>Suggested fix</div>
+            <div>Action</div>
+          </div>
+          <div className="max-h-[19rem] overflow-y-auto">
+            {openTasks.map((task) => (
+              <button
+                key={task.id}
+                onClick={() => setSelectedTask(task.id)}
+                className={`w-full grid grid-cols-[1.4fr_0.8fr_0.8fr_1.2fr_0.7fr] gap-3 px-3 py-2 text-left border-b border-border/60 transition-colors ${
+                  selectedTask?.id === task.id ? "bg-primary/5" : "hover:bg-secondary/70"
+                }`}
+              >
+                <div>
+                  <div className="text-[11px] font-semibold text-foreground">{task.title}</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">{task.confidenceBand} confidence</div>
+                </div>
+                <div className="text-[10px] text-muted-foreground self-center">{task.owner.replace("_", " ")}</div>
+                <div className="self-center"><Pill tone={resolutionTone(task.resolution)}>{formatResolution(task.resolution)}</Pill></div>
+                <div className="text-[10px] text-muted-foreground leading-tight self-center">{task.suggestedFix}</div>
+                <div className="self-center">
+                  <span className="text-[10px] font-medium text-primary">
+                    {task.resolution === "awaiting-approval" || task.resolution === "open" ? "Review" : "Open"}
+                  </span>
+                </div>
+              </button>
+            ))}
+
+            <button
+              onClick={() => setShowCompleted((v) => !v)}
+              className="w-full px-3 py-2 text-left text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+            >
+              {showCompleted ? "Hide" : "Show"} completed tasks ({completedTasks.length})
+            </button>
+
+            {showCompleted && completedTasks.map((task) => (
+              <button
+                key={task.id}
+                onClick={() => setSelectedTask(task.id)}
+                className={`w-full grid grid-cols-[1.4fr_0.8fr_0.8fr_1.2fr_0.7fr] gap-3 px-3 py-2 text-left border-t border-border/60 transition-colors ${
+                  selectedTask?.id === task.id ? "bg-primary/5" : "hover:bg-secondary/70"
+                }`}
+              >
+                <div className="text-[11px] text-foreground">{task.title}</div>
+                <div className="text-[10px] text-muted-foreground self-center">{task.owner.replace("_", " ")}</div>
+                <div className="self-center"><Pill tone="green">{formatResolution(task.resolution)}</Pill></div>
+                <div className="text-[10px] text-muted-foreground leading-tight self-center">{task.suggestedFix}</div>
+                <div className="self-center text-[10px] font-medium text-primary">View</div>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 flex flex-col">
+        <div className="p-3 border-b border-border">
+          <div className="card-surface px-3 py-2 space-y-2">
+            {selectedTask ? (
+              <>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="text-[11px] font-semibold text-foreground">{selectedTask.title}</div>
+                    <div className="mt-1 text-[10px] text-muted-foreground leading-tight">{selectedTask.rationale}</div>
+                  </div>
+                  <Pill tone={resolutionTone(selectedTask.resolution)}>{formatResolution(selectedTask.resolution)}</Pill>
+                </div>
+                <div className="text-[10px] text-muted-foreground">Suggested fix: <span className="text-foreground">{selectedTask.suggestedFix}</span></div>
+                <div className="text-[10px] text-muted-foreground">Expected impact: <span className="text-foreground">{selectedTask.impactSummary}</span></div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button onClick={() => approveTask(selectedTask)} className="px-2.5 py-1 rounded-md bg-primary text-primary-foreground text-[10px] font-medium">Approve</button>
+                  <button onClick={() => modifyTask(selectedTask)} className="px-2.5 py-1 rounded-md bg-secondary text-foreground text-[10px] font-medium border border-border">Modify</button>
+                  <button onClick={() => rejectTask(selectedTask)} className="px-2.5 py-1 rounded-md bg-secondary text-foreground text-[10px] font-medium border border-border">Reject</button>
+                  <button onClick={() => pushAssistant(generateTaskExplanation(selectedTask, currentScenario))} className="px-2.5 py-1 rounded-md bg-secondary text-foreground text-[10px] font-medium border border-border">Ask why</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-[11px] font-semibold text-foreground">
+                  {state.planEditMode ? "Plan edit mode" : "Plan summary"}
+                </div>
+                <div className="text-[10px] text-muted-foreground leading-tight">
+                  {state.planEditMode
+                    ? "Edit the active plan in chat. You can add a task, remove the selected task, reassign it between AI and human review, or change the suggested fix."
+                    : "Select a task from the queue to review it, approve it, or discuss it in chat."}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
           <AnimatePresence>
             {messages.map((msg, i) => (
@@ -500,7 +526,7 @@ export default function ChatPanel() {
 
         <div className="p-3 border-t border-border space-y-2">
           <div className="flex flex-col gap-1">
-            {suggestions.map((suggestion) => (
+            {planSuggestions.map((suggestion) => (
               <button
                 key={suggestion}
                 onClick={() => send(suggestion)}
@@ -515,7 +541,7 @@ export default function ChatPanel() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && send(input)}
-              placeholder={`Ask, approve, or modify the ${strategyLabels[currentScenario.mode].toLowerCase()} strategy...`}
+              placeholder={placeholder}
               className="flex-1 bg-secondary rounded-md px-3 py-1.5 text-[11px] text-foreground placeholder:text-muted-foreground outline-none focus:ring-1 focus:ring-primary"
             />
             <button

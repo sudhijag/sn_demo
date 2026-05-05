@@ -45,16 +45,49 @@ export interface ScenarioOutcome {
 
 export type ActionThreshold = "H" | "M" | "L";
 export type ActionAutomation = "auto" | "approve" | "modify";
+export type TaskPriority = "low" | "medium" | "high";
+export type TaskResolution =
+  | "open"
+  | "auto-approved"
+  | "awaiting-approval"
+  | "user-approved"
+  | "modified"
+  | "rejected"
+  | "completed";
+export type TaskConfidenceBand = "high" | "medium" | "low";
+export type TaskAssignee = "ai" | "human";
+export type ResponsePlanStatus = "control" | "generated" | "in_progress" | "completed";
 
-export interface ResponseAction {
+export interface PlanTask {
   id: string;
-  interventionType: InterventionType;
   title: string;
   details: string;
+  rationale: string;
+  suggestedFix: string;
+  owner: "command_center" | "supply_chain" | "plant_ops" | "logistics";
+  assignee: TaskAssignee;
+  priority: TaskPriority;
+  confidenceBand: TaskConfidenceBand;
   threshold: ActionThreshold;
   automation: ActionAutomation;
-  owner: "command_center" | "supply_chain" | "plant_ops" | "logistics";
-  status: "queued" | "auto-running" | "awaiting-approval";
+  resolution: TaskResolution;
+  interventionType: InterventionType | null;
+  impactSummary: string;
+  openedAtTick: number;
+  closedAtTick: number | null;
+}
+
+export interface ResponsePlan {
+  id: string;
+  title: string;
+  summary: string;
+  status: ResponsePlanStatus;
+  createdFrom: {
+    mode: StrategyMode;
+    outageDurationDays: number;
+    spareCapacityPct: number;
+  };
+  tasks: PlanTask[];
 }
 
 export interface ScenarioVersion {
@@ -63,7 +96,7 @@ export interface ScenarioVersion {
   mode: StrategyMode;
   assumptions: ScenarioAssumptions;
   enabledInterventions: InterventionType[];
-  responsePlan: ResponseAction[];
+  responsePlan: ResponsePlan;
   outcome: ScenarioOutcome;
 }
 
@@ -272,6 +305,225 @@ export function computeScenarioOutcome(
   };
 }
 
+export function getObjectiveLabel(objective: ScenarioObjective) {
+  switch (objective) {
+    case "service_level":
+      return "Service level";
+    case "recovery_time":
+      return "Recovery time";
+    case "margin":
+    default:
+      return "Margin";
+  }
+}
+
+export function getStrategyLabel(mode: StrategyMode) {
+  switch (mode) {
+    case "baseline":
+      return "Control";
+    case "manual":
+      return "Manual response";
+    case "ai":
+    default:
+      return "AI-optimized";
+  }
+}
+
+function getActionTemplate(type: InterventionType, assumptions: ScenarioAssumptions) {
+  switch (type) {
+    case "reroute_volume":
+      return {
+        title: "Reroute Dallas volume",
+        details: `Shift constrained Dallas output into Phoenix, Atlanta, and Los Angeles for the next ${Math.min(assumptions.outageDurationDays, 14)} days.`,
+        rationale: "Dallas disruption is starving downstream plants. Fast lane rerouting restores network flow faster than waiting for on-site recovery.",
+        owner: "logistics" as const,
+        suggestedFix: "Move 18-22% of Dallas volume into Phoenix, Atlanta, and Los Angeles until the outage stabilizes.",
+        priority: "medium" as const,
+        confidenceBand: "medium" as const,
+      };
+    case "add_overtime":
+      return {
+        title: "Increase overtime coverage",
+        details: `Increase receiving-plant labor coverage while labor availability is ${assumptions.laborAvailabilityPct}%.`,
+        rationale: "Receiving plants have spare routing paths but not enough labor to absorb the disruption without overtime coverage.",
+        owner: "plant_ops" as const,
+        suggestedFix: "Approve three weeks of overtime in Phoenix and Atlanta to protect throughput.",
+        priority: "medium" as const,
+        confidenceBand: "medium" as const,
+      };
+    case "expedite_freight":
+      return {
+        title: "Expedite freight lanes",
+        details: `Upgrade key inbound and cross-country lanes while supplier lead time is ${assumptions.supplierLeadTimeDays} days.`,
+        rationale: "Transit delay is compounding the outage. Expedited freight can recover service quickly but introduces higher execution cost.",
+        owner: "logistics" as const,
+        suggestedFix: "Approve expedited freight on the most time-sensitive lanes for the next 10 days.",
+        priority: "high" as const,
+        confidenceBand: "low" as const,
+      };
+    case "prioritize_skus":
+      return {
+        title: "Protect high-priority SKUs",
+        details: `Protect ${assumptions.skuPriority.replace("_", " ")} assortments and defer lower-priority volume.`,
+        rationale: "The network can preserve margin and customer trust by protecting the highest-value demand while constrained capacity is reallocated.",
+        owner: "command_center" as const,
+        suggestedFix: "Shift the plan to prioritize strategic and high-margin SKUs until Dallas recovers.",
+        priority: "low" as const,
+        confidenceBand: "high" as const,
+      };
+    case "open_overflow_capacity":
+      return {
+        title: "Open overflow capacity",
+        details: "Bring overflow or partner capacity online to preserve service-level commitments.",
+        rationale: "Overflow capacity preserves service under a long outage, but the spend and coordination burden are large enough to require review.",
+        owner: "supply_chain" as const,
+        suggestedFix: "Open partner overflow capacity for the next 2-3 weeks if service protection is worth the added cost.",
+        priority: "high" as const,
+        confidenceBand: "low" as const,
+      };
+    case "shift_labor":
+      return {
+        title: "Shift labor to constrained sites",
+        details: "Redeploy labor from lower-priority plants into the constrained corridor.",
+        rationale: "Labor can be rebalanced quickly with relatively low risk compared with freight or partner-capacity decisions.",
+        owner: "plant_ops" as const,
+        suggestedFix: "Temporarily redeploy labor into Phoenix and Atlanta receiving lines for the response window.",
+        priority: "low" as const,
+        confidenceBand: "high" as const,
+      };
+  }
+}
+
+function getActionControls(type: InterventionType, mode: StrategyMode): Pick<PlanTask, "threshold" | "automation" | "resolution" | "assignee"> {
+  if (mode === "baseline") {
+    return { threshold: "L", automation: "modify", resolution: "open", assignee: "human" };
+  }
+
+  if (mode === "manual") {
+    const highApproval = type === "open_overflow_capacity" || type === "expedite_freight";
+    return {
+      threshold: highApproval ? "H" : type === "reroute_volume" ? "M" : "L",
+      automation: highApproval ? "approve" : "modify",
+      resolution: highApproval ? "awaiting-approval" : "open",
+      assignee: "human",
+    };
+  }
+
+  if (type === "prioritize_skus" || type === "shift_labor") {
+    return { threshold: "L", automation: "auto", resolution: "auto-approved", assignee: "ai" };
+  }
+
+  if (type === "expedite_freight" || type === "open_overflow_capacity") {
+    return { threshold: "H", automation: "approve", resolution: "awaiting-approval", assignee: "human" };
+  }
+
+  if (type === "reroute_volume") {
+    return { threshold: "M", automation: "modify", resolution: "open", assignee: "ai" };
+  }
+
+  return { threshold: "M", automation: "modify", resolution: "open", assignee: "human" };
+}
+
+function getImpactSummary(type: InterventionType) {
+  const intervention = interventionByType[type];
+  return `${formatDeltaPct(intervention.marginLiftPct)} margin · +${intervention.serviceLiftPct.toFixed(1)}pts service · ${intervention.recoveryLiftDays.toFixed(1)}d faster recovery`;
+}
+
+export function isSafeTask(task: PlanTask) {
+  return (
+    task.priority === "low" &&
+    (task.automation === "auto" || task.automation === "modify") &&
+    task.interventionType !== "expedite_freight" &&
+    task.interventionType !== "open_overflow_capacity" &&
+    task.interventionType !== "reroute_volume"
+  );
+}
+
+function buildPlanTask(
+  type: InterventionType,
+  mode: StrategyMode,
+  assumptions: ScenarioAssumptions,
+  openedAtTick: number,
+): PlanTask {
+  const template = getActionTemplate(type, assumptions);
+  const controls = getActionControls(type, mode);
+  return {
+    id: `${mode}-${type}`,
+    interventionType: type,
+    title: template.title,
+    details: template.details,
+    rationale: template.rationale,
+    suggestedFix: template.suggestedFix,
+    owner: template.owner,
+    priority: template.priority,
+    confidenceBand: template.confidenceBand,
+    impactSummary: getImpactSummary(type),
+    openedAtTick,
+    closedAtTick: controls.resolution === "auto-approved" ? openedAtTick : null,
+    ...controls,
+  };
+}
+
+export function buildResponsePlan(
+  interventions: InterventionType[],
+  mode: StrategyMode,
+  assumptions: ScenarioAssumptions,
+  openedAtTick = 0,
+): ResponsePlan {
+  if (mode === "baseline") {
+    return {
+      id: "control-plan",
+      title: "Control case",
+      summary: "No intervention package is active yet. The command center is monitoring the control case before the disruption response begins.",
+      status: "control",
+      createdFrom: {
+        mode,
+        outageDurationDays: assumptions.outageDurationDays,
+        spareCapacityPct: assumptions.spareCapacityPct,
+      },
+      tasks: [
+        {
+          id: "baseline-observe",
+          interventionType: null,
+          title: "Observe baseline network",
+          details: "Hold the current operating plan and watch the replay until the disruption begins.",
+          rationale: "The control case establishes the reference outcome before any mitigation actions are introduced.",
+          suggestedFix: "No action yet. Let the replay establish the baseline impact first.",
+          owner: "command_center",
+          assignee: "human",
+          priority: "low",
+          confidenceBand: "high",
+          threshold: "L",
+          automation: "modify",
+          resolution: "open",
+          impactSummary: "Reference case only",
+          openedAtTick,
+          closedAtTick: null,
+        },
+      ],
+    };
+  }
+
+  const tasks = interventions.map((type) => buildPlanTask(type, mode, assumptions, openedAtTick));
+  const openCount = tasks.filter((task) => !["auto-approved", "completed"].includes(task.resolution)).length;
+  const summary = openCount === 0
+    ? "The AI plan has no unresolved exceptions right now."
+    : `${openCount} task${openCount === 1 ? "" : "s"} need review or tracking in the current response window.`;
+
+  return {
+    id: `${mode}-response-plan`,
+    title: mode === "ai" ? "AI response plan" : "Manual response plan",
+    summary,
+    status: openCount === 0 ? "completed" : "generated",
+    createdFrom: {
+      mode,
+      outageDurationDays: assumptions.outageDurationDays,
+      spareCapacityPct: assumptions.spareCapacityPct,
+    },
+    tasks,
+  };
+}
+
 export function buildScenarioVersions(
   assumptions: ScenarioAssumptions,
   selectedInterventions: InterventionType[],
@@ -332,135 +584,62 @@ export function getBestStrategy(
   );
 }
 
-export function getObjectiveLabel(objective: ScenarioObjective) {
-  switch (objective) {
-    case "service_level":
-      return "Service level";
-    case "recovery_time":
-      return "Recovery time";
-    case "margin":
-    default:
-      return "Margin";
-  }
-}
+export function sortPlanTasks(tasks: PlanTask[]) {
+  const groupScore: Record<TaskResolution, number> = {
+    open: 0,
+    "awaiting-approval": 1,
+    modified: 2,
+    rejected: 3,
+    "user-approved": 4,
+    "auto-approved": 5,
+    completed: 6,
+  };
+  const confidenceScore: Record<TaskConfidenceBand, number> = {
+    low: 0,
+    medium: 1,
+    high: 2,
+  };
+  const priorityScore: Record<TaskPriority, number> = {
+    high: 0,
+    medium: 1,
+    low: 2,
+  };
 
-export function getStrategyLabel(mode: StrategyMode) {
-  switch (mode) {
-    case "baseline":
-      return "Control";
-    case "manual":
-      return "Manual response";
-    case "ai":
-    default:
-      return "AI-optimized";
-  }
-}
+  return [...tasks].sort((a, b) => {
+    const aCompleted = a.resolution === "auto-approved" || a.resolution === "completed";
+    const bCompleted = b.resolution === "auto-approved" || b.resolution === "completed";
+    if (aCompleted !== bCompleted) return aCompleted ? 1 : -1;
 
-function getActionTemplate(type: InterventionType, assumptions: ScenarioAssumptions) {
-  switch (type) {
-    case "reroute_volume":
-      return {
-        title: "Reroute Dallas volume",
-        details: `Shift constrained Dallas output into Phoenix, Atlanta, and Los Angeles for the next ${Math.min(assumptions.outageDurationDays, 14)} days.`,
-        owner: "logistics" as const,
-      };
-    case "add_overtime":
-      return {
-        title: "Increase overtime coverage",
-        details: `Increase receiving-plant labor coverage while labor availability is ${assumptions.laborAvailabilityPct}%.`,
-        owner: "plant_ops" as const,
-      };
-    case "expedite_freight":
-      return {
-        title: "Expedite freight lanes",
-        details: `Upgrade key inbound and cross-country lanes while supplier lead time is ${assumptions.supplierLeadTimeDays} days.`,
-        owner: "logistics" as const,
-      };
-    case "prioritize_skus":
-      return {
-        title: "Protect high-priority SKUs",
-        details: `Protect ${assumptions.skuPriority.replace("_", " ")} assortments and defer lower-priority volume.`,
-        owner: "command_center" as const,
-      };
-    case "open_overflow_capacity":
-      return {
-        title: "Open overflow capacity",
-        details: "Bring overflow or partner capacity online to preserve service-level commitments.",
-        owner: "supply_chain" as const,
-      };
-    case "shift_labor":
-      return {
-        title: "Shift labor to constrained sites",
-        details: "Redeploy labor from lower-priority plants into the constrained corridor.",
-        owner: "plant_ops" as const,
-      };
-  }
-}
+    if (a.confidenceBand !== b.confidenceBand) {
+      return confidenceScore[a.confidenceBand] - confidenceScore[b.confidenceBand];
+    }
 
-function getActionControls(type: InterventionType, mode: StrategyMode): Pick<ResponseAction, "threshold" | "automation" | "status"> {
-  if (mode === "baseline") {
-    return { threshold: "L", automation: "modify", status: "queued" };
-  }
+    if (groupScore[a.resolution] !== groupScore[b.resolution]) {
+      return groupScore[a.resolution] - groupScore[b.resolution];
+    }
 
-  if (mode === "manual") {
-    const highApproval = type === "open_overflow_capacity" || type === "expedite_freight";
-    return {
-      threshold: highApproval ? "H" : type === "reroute_volume" ? "M" : "L",
-      automation: highApproval ? "approve" : "modify",
-      status: highApproval ? "awaiting-approval" : "queued",
-    };
-  }
+    if (priorityScore[a.priority] !== priorityScore[b.priority]) {
+      return priorityScore[a.priority] - priorityScore[b.priority];
+    }
 
-  if (type === "reroute_volume" || type === "prioritize_skus" || type === "shift_labor") {
-    return { threshold: "M", automation: "auto", status: "auto-running" };
-  }
-
-  if (type === "expedite_freight" || type === "open_overflow_capacity") {
-    return { threshold: "H", automation: "approve", status: "awaiting-approval" };
-  }
-
-  return { threshold: "L", automation: "modify", status: "queued" };
-}
-
-export function buildResponsePlan(
-  interventions: InterventionType[],
-  mode: StrategyMode,
-  assumptions: ScenarioAssumptions,
-): ResponseAction[] {
-  if (mode === "baseline") {
-    return [
-      {
-        id: "baseline-observe",
-        interventionType: "reroute_volume",
-        title: "Observe baseline network",
-        details: "Hold the current operating plan and wait for the incident trigger before taking action.",
-        threshold: "L",
-        automation: "modify",
-        owner: "command_center",
-        status: "queued",
-      },
-    ];
-  }
-
-  return interventions.map((type) => {
-    const template = getActionTemplate(type, assumptions);
-    const controls = getActionControls(type, mode);
-    return {
-      id: `${mode}-${type}`,
-      interventionType: type,
-      title: template.title,
-      details: template.details,
-      owner: template.owner,
-      ...controls,
-    };
+    return a.title.localeCompare(b.title);
   });
+}
+
+export function generateTaskExplanation(task: PlanTask, scenario: ScenarioVersion) {
+  return [
+    `${task.title} is flagged because ${task.rationale}`,
+    `Suggested fix: ${task.suggestedFix}`,
+    `Expected impact: ${task.impactSummary}`,
+    `Current resolution: ${task.resolution.replace("-", " ")} with ${Math.round(scenario.outcome.confidencePct)}% overall scenario confidence.`,
+  ].join("\n\n");
 }
 
 export function generateExecutiveAnswer(
   question: string,
   scenario: ScenarioVersion,
   best: ScenarioVersion,
-) : ExecutiveAnswer {
+): ExecutiveAnswer {
   const { assumptions, enabledInterventions, outcome } = scenario;
   const bestIsCurrent = best.mode === scenario.mode;
   const actionLabels = enabledInterventions.map((type) => interventionByType[type].label);
@@ -468,7 +647,7 @@ export function generateExecutiveAnswer(
   return {
     summary: `${question.includes("Q3 margin") ? "Q3 margin" : "This scenario"} is projected at ${outcome.marginDeltaPct.toFixed(1)}% versus plan with recovery in ${outcome.recoveryDays.toFixed(1)} days. ${bestIsCurrent ? "Current strategy is already the strongest option." : `${best.label} is outperforming the current strategy on the current decision objective.`}`,
     recommendedActions: actionLabels.length > 0 ? actionLabels : ["No mitigation actions selected yet"],
-    responseChecklist: scenario.responsePlan.map((action) => `${action.threshold} · ${action.automation} · ${action.title}`),
+    responseChecklist: scenario.responsePlan.tasks.map((task) => `${task.threshold} · ${task.automation} · ${task.title}`),
     estimatedImpact: [
       `Revenue impact ${formatMillions(outcome.revenueDelta)}`,
       `Service level ${outcome.serviceLevelPct.toFixed(1)}%`,

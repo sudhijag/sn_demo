@@ -371,13 +371,17 @@ Status:
 - `[x]` Keep chat visible instead of hiding ask behind a tab.
 - `[x]` Represent response strategies as concrete action checklists rather than only KPI deltas.
 - `[x]` Introduce action thresholds and autonomy levels so some steps can run automatically while others require approval.
-- `[ ]` Let chat approve, modify, or reject specific response actions in a more structured way.
-- `[ ]` Allow chat to reshape intervention bundles without forcing the user through rigid UI.
+- `[x]` Replace the tab stack with an active response-plan and task-queue model.
+- `[x]` Let chat approve, modify, or reject specific response actions in a more structured way.
+- `[x]` Add a task-log-first command center with auto-approve for safe tasks and a focused task detail pane.
+- `[~]` Allow chat to reshape intervention bundles without forcing the user through rigid UI.
 - `[ ]` Add stronger conversational memory and command-center style follow-through.
 
 Acceptance criteria:
 
 - Chat feels like an always-available command center, not a side demo.
+- A disruption produces one AI-generated response plan with open exceptions and completed work.
+- A user can review a task, approve or reject it, or enter plan-edit mode and reshape the shell of the plan in chat.
 - Response plans are legible as concrete actions, owners, and approval thresholds.
 - The user can delegate and refine strategy through conversation, not just select from three rigid choices.
 

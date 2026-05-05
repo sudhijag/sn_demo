@@ -14,6 +14,9 @@ import {
   BASELINE_ASSUMPTIONS,
   buildScenarioVersions,
   getBestStrategy,
+  isSafeTask,
+  type PlanTask,
+  type ResponsePlan,
   type InterventionType,
   type ScenarioAssumptions,
   type ScenarioObjective,
@@ -53,6 +56,11 @@ export interface GameState {
   assumptions: ScenarioAssumptions;
   selectedInterventions: InterventionType[];
   simulationPhase: SimulationPhase;
+  selectedTaskId: string | null;
+  planEditMode: boolean;
+  planTaskOverrides: Record<string, Partial<PlanTask>>;
+  addedPlanTasks: PlanTask[];
+  removedTaskIds: string[];
 }
 
 type Action =
@@ -69,7 +77,13 @@ type Action =
   | { type: "SET_OBJECTIVE"; objective: ScenarioObjective }
   | { type: "SET_ACTIVE_SCENARIO"; mode: StrategyMode }
   | { type: "UPDATE_ASSUMPTION"; key: keyof ScenarioAssumptions; value: ScenarioAssumptions[keyof ScenarioAssumptions] }
-  | { type: "TOGGLE_INTERVENTION"; intervention: InterventionType };
+  | { type: "TOGGLE_INTERVENTION"; intervention: InterventionType }
+  | { type: "SELECT_TASK"; id: string | null }
+  | { type: "SET_PLAN_EDIT_MODE"; enabled: boolean }
+  | { type: "UPDATE_PLAN_TASK"; id: string; patch: Partial<PlanTask> }
+  | { type: "AUTO_APPROVE_SAFE_TASKS"; basePlan: ResponsePlan }
+  | { type: "ADD_PLAN_TASK"; task: PlanTask }
+  | { type: "REMOVE_PLAN_TASK"; id: string };
 
 function initial(): GameState {
   return {
@@ -98,6 +112,11 @@ function initial(): GameState {
     assumptions: BASELINE_ASSUMPTIONS,
     selectedInterventions: [],
     simulationPhase: "baseline",
+    selectedTaskId: null,
+    planEditMode: false,
+    planTaskOverrides: {},
+    addedPlanTasks: [],
+    removedTaskIds: [],
   };
 }
 
@@ -111,6 +130,22 @@ function recomputeTotals(state: GameState): GameState {
   const revenuePerHr = state.buildings.reduce((s, b) => s + b.revenuePerHr, 0);
   const upkeepPerHr = state.buildings.reduce((s, b) => s + b.upkeepPerHr, 0);
   return { ...state, revenuePerHr, upkeepPerHr };
+}
+
+function mergeResponsePlan(basePlan: ResponsePlan, state: GameState): ResponsePlan {
+  const baseTasks = basePlan.tasks
+    .filter((task) => !state.removedTaskIds.includes(task.id))
+    .map((task) => ({ ...task, ...state.planTaskOverrides[task.id] }));
+  const tasks = [...baseTasks, ...state.addedPlanTasks];
+  const openTasks = tasks.filter((task) => task.resolution !== "auto-approved" && task.resolution !== "completed" && task.resolution !== "rejected");
+  return {
+    ...basePlan,
+    tasks,
+    status: openTasks.length === 0 ? "completed" : "in_progress",
+    summary: openTasks.length === 0
+      ? "The current response plan has no unresolved exceptions."
+      : `${openTasks.length} task${openTasks.length === 1 ? "" : "s"} are still open in the response queue.`,
+  };
 }
 
 function getSimulationPhase(lastTick: number): SimulationPhase {
@@ -283,6 +318,7 @@ function reducer(state: GameState, action: Action): GameState {
         events,
         lastTick,
         simulationPhase,
+        activeScenarioMode: simulationPhase === "baseline" ? "baseline" : state.activeScenarioMode,
       };
     }
 
@@ -486,6 +522,75 @@ function reducer(state: GameState, action: Action): GameState {
         selectedInterventions,
       };
     }
+
+    case "SELECT_TASK":
+      return { ...state, selectedTaskId: action.id, planEditMode: false };
+
+    case "SET_PLAN_EDIT_MODE":
+      return { ...state, planEditMode: action.enabled };
+
+    case "UPDATE_PLAN_TASK": {
+      const current = state.planTaskOverrides[action.id] ?? {};
+      const selectedInterventions = action.patch.interventionType && action.patch.resolution === "user-approved"
+        ? state.selectedInterventions.includes(action.patch.interventionType)
+          ? state.selectedInterventions
+          : [...state.selectedInterventions, action.patch.interventionType]
+        : action.patch.interventionType && action.patch.resolution === "rejected"
+          ? state.selectedInterventions.filter((item) => item !== action.patch.interventionType)
+          : state.selectedInterventions;
+
+      return {
+        ...state,
+        activeScenarioMode: state.simulationPhase === "baseline" ? "baseline" : "manual",
+        selectedInterventions,
+        planTaskOverrides: {
+          ...state.planTaskOverrides,
+          [action.id]: { ...current, ...action.patch },
+        },
+      };
+    }
+
+    case "AUTO_APPROVE_SAFE_TASKS": {
+      const safeTasks = mergeResponsePlan(action.basePlan, state).tasks.filter(
+        (task) => task.closedAtTick === null && isSafeTask(task),
+      );
+      const nextOverrides = { ...state.planTaskOverrides };
+      let selectedInterventions = state.selectedInterventions;
+
+      for (const task of safeTasks) {
+        nextOverrides[task.id] = {
+          ...nextOverrides[task.id],
+          resolution: "completed",
+          assignee: "ai",
+          closedAtTick: state.lastTick,
+        };
+        if (task.interventionType && !selectedInterventions.includes(task.interventionType)) {
+          selectedInterventions = [...selectedInterventions, task.interventionType];
+        }
+      }
+
+      return {
+        ...state,
+        activeScenarioMode: state.simulationPhase === "baseline" ? "baseline" : "manual",
+        selectedInterventions,
+        planTaskOverrides: nextOverrides,
+      };
+    }
+
+    case "ADD_PLAN_TASK":
+      return {
+        ...state,
+        planEditMode: true,
+        selectedTaskId: action.task.id,
+        addedPlanTasks: [...state.addedPlanTasks, action.task],
+      };
+
+    case "REMOVE_PLAN_TASK":
+      return {
+        ...state,
+        selectedTaskId: state.selectedTaskId === action.id ? null : state.selectedTaskId,
+        removedTaskIds: [...state.removedTaskIds, action.id],
+      };
   }
 }
 
@@ -505,10 +610,21 @@ interface GameStateContextValue {
   scenarios: Record<StrategyMode, ScenarioVersion>;
   currentScenario: ScenarioVersion;
   bestScenario: ScenarioVersion;
+  activeResponsePlan: ResponsePlan;
+  selectedTask: PlanTask | null;
   setObjective: (objective: ScenarioObjective) => void;
   setActiveScenario: (mode: StrategyMode) => void;
   updateAssumption: <K extends keyof ScenarioAssumptions>(key: K, value: ScenarioAssumptions[K]) => void;
   toggleIntervention: (intervention: InterventionType) => void;
+  setSelectedTask: (id: string | null) => void;
+  setPlanEditMode: (enabled: boolean) => void;
+  approveTask: (task: PlanTask) => void;
+  autoApproveSafeTasks: () => void;
+  rejectTask: (task: PlanTask) => void;
+  modifyTask: (task: PlanTask, patch?: Partial<PlanTask>) => void;
+  addPlanTask: (title: string, details?: string) => void;
+  removePlanTask: (id: string) => void;
+  reassignTask: (task: PlanTask, assignee: "ai" | "human") => void;
 }
 
 const GameStateContext = createContext<GameStateContextValue | null>(null);
@@ -533,6 +649,8 @@ export function GameStateProvider({ children }: { children: ReactNode }) {
   const toggleIntervention = useCallback((intervention: InterventionType) => {
     dispatch({ type: "TOGGLE_INTERVENTION", intervention });
   }, []);
+  const setSelectedTask = useCallback((id: string | null) => dispatch({ type: "SELECT_TASK", id }), []);
+  const setPlanEditMode = useCallback((enabled: boolean) => dispatch({ type: "SET_PLAN_EDIT_MODE", enabled }), []);
 
   const selectedBuilding = useMemo(
     () => state.buildings.find(b => b.id === state.selectedBuildingId) ?? null,
@@ -546,6 +664,95 @@ export function GameStateProvider({ children }: { children: ReactNode }) {
 
   const currentScenario = scenarios[state.activeScenarioMode];
   const bestScenario = getBestStrategy(scenarios, state.objective);
+  const activePlanBase = state.simulationPhase === "baseline" ? scenarios.baseline.responsePlan : scenarios.ai.responsePlan;
+  const activeResponsePlan = useMemo(
+    () => mergeResponsePlan(activePlanBase, state),
+    [activePlanBase, state],
+  );
+  const selectedTask = useMemo(
+    () => activeResponsePlan.tasks.find((task) => task.id === state.selectedTaskId) ?? null,
+    [activeResponsePlan.tasks, state.selectedTaskId],
+  );
+
+  const approveTask = useCallback((task: PlanTask) => {
+    dispatch({
+      type: "UPDATE_PLAN_TASK",
+      id: task.id,
+      patch: {
+        resolution: "user-approved",
+        assignee: "human",
+        closedAtTick: state.lastTick,
+        interventionType: task.interventionType,
+      },
+    });
+  }, [state.lastTick]);
+
+  const autoApproveSafeTasks = useCallback(() => {
+    dispatch({ type: "AUTO_APPROVE_SAFE_TASKS", basePlan: activePlanBase });
+  }, [activePlanBase]);
+
+  const rejectTask = useCallback((task: PlanTask) => {
+    dispatch({
+      type: "UPDATE_PLAN_TASK",
+      id: task.id,
+      patch: {
+        resolution: "rejected",
+        assignee: "human",
+        closedAtTick: state.lastTick,
+        interventionType: task.interventionType,
+      },
+    });
+  }, [state.lastTick]);
+
+  const modifyTask = useCallback((task: PlanTask, patch?: Partial<PlanTask>) => {
+    dispatch({
+      type: "UPDATE_PLAN_TASK",
+      id: task.id,
+      patch: {
+        resolution: "modified",
+        assignee: "human",
+        interventionType: task.interventionType,
+        ...patch,
+      },
+    });
+  }, []);
+
+  const addPlanTask = useCallback((title: string, details?: string) => {
+    const task: PlanTask = {
+      id: `custom-${Date.now()}`,
+      title,
+      details: details ?? "User-added plan task.",
+      rationale: "Added during plan-edit mode to reflect an executive override or additional response step.",
+      suggestedFix: details ?? `Review and execute: ${title}`,
+      owner: "command_center",
+      assignee: "human",
+      priority: "medium",
+      confidenceBand: "medium",
+      threshold: "M",
+      automation: "modify",
+      resolution: "open",
+      interventionType: null,
+      impactSummary: "Custom task impact needs review",
+      openedAtTick: state.lastTick,
+      closedAtTick: null,
+    };
+    dispatch({ type: "ADD_PLAN_TASK", task });
+  }, [state.lastTick]);
+
+  const removePlanTask = useCallback((id: string) => {
+    dispatch({ type: "REMOVE_PLAN_TASK", id });
+  }, []);
+
+  const reassignTask = useCallback((task: PlanTask, assignee: "ai" | "human") => {
+    dispatch({
+      type: "UPDATE_PLAN_TASK",
+      id: task.id,
+      patch: {
+        assignee,
+        resolution: assignee === "ai" ? task.resolution === "open" ? "auto-approved" : task.resolution : "modified",
+      },
+    });
+  }, []);
 
   const value = useMemo<GameStateContextValue>(
     () => ({
@@ -564,10 +771,21 @@ export function GameStateProvider({ children }: { children: ReactNode }) {
       scenarios,
       currentScenario,
       bestScenario,
+      activeResponsePlan,
+      selectedTask,
       setObjective,
       setActiveScenario,
       updateAssumption,
       toggleIntervention,
+      setSelectedTask,
+      setPlanEditMode,
+      approveTask,
+      autoApproveSafeTasks,
+      rejectTask,
+      modifyTask,
+      addPlanTask,
+      removePlanTask,
+      reassignTask,
     }),
     [
       state,
@@ -584,10 +802,21 @@ export function GameStateProvider({ children }: { children: ReactNode }) {
       scenarios,
       currentScenario,
       bestScenario,
+      activeResponsePlan,
+      selectedTask,
       setObjective,
       setActiveScenario,
       updateAssumption,
       toggleIntervention,
+      setSelectedTask,
+      setPlanEditMode,
+      approveTask,
+      autoApproveSafeTasks,
+      rejectTask,
+      modifyTask,
+      addPlanTask,
+      removePlanTask,
+      reassignTask,
     ],
   );
 
