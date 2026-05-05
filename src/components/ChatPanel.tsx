@@ -358,7 +358,7 @@ export default function ChatPanel() {
       : "Select a task from the queue or ask about the current response plan...";
 
   return (
-    <div className="w-[31rem] flex flex-col border-l border-border bg-card/40">
+    <div className="w-[36rem] flex flex-col border-l border-border bg-card/40">
       <div className="px-4 py-3 border-b border-border space-y-3">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-primary pulse-dot" />
@@ -409,12 +409,12 @@ export default function ChatPanel() {
             <div>Suggested fix</div>
             <div>Action</div>
           </div>
-          <div className="max-h-[19rem] overflow-y-auto">
+          <div className="max-h-[13rem] overflow-y-auto">
             {openTasks.map((task) => (
               <button
                 key={task.id}
                 onClick={() => setSelectedTask(task.id)}
-                className={`w-full grid grid-cols-[1.4fr_0.8fr_0.8fr_1.2fr_0.7fr] gap-3 px-3 py-2 text-left border-b border-border/60 transition-colors ${
+                className={`w-full grid grid-cols-[1.25fr_0.7fr_0.8fr_1.2fr_0.55fr] gap-3 px-3 py-2 text-left border-b border-border/60 transition-colors ${
                   selectedTask?.id === task.id ? "bg-primary/5" : "hover:bg-secondary/70"
                 }`}
               >
@@ -444,7 +444,7 @@ export default function ChatPanel() {
               <button
                 key={task.id}
                 onClick={() => setSelectedTask(task.id)}
-                className={`w-full grid grid-cols-[1.4fr_0.8fr_0.8fr_1.2fr_0.7fr] gap-3 px-3 py-2 text-left border-t border-border/60 transition-colors ${
+                className={`w-full grid grid-cols-[1.25fr_0.7fr_0.8fr_1.2fr_0.55fr] gap-3 px-3 py-2 text-left border-t border-border/60 transition-colors ${
                   selectedTask?.id === task.id ? "bg-primary/5" : "hover:bg-secondary/70"
                 }`}
               >
@@ -495,7 +495,7 @@ export default function ChatPanel() {
           </div>
         </div>
 
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
+        <div ref={scrollRef} className="flex-1 min-h-[16rem] overflow-y-auto p-3 space-y-3">
           <AnimatePresence>
             {messages.map((msg, i) => (
               <motion.div

@@ -73,7 +73,7 @@ function IndexBody() {
             <span className="text-[11px] font-mono text-primary">
               {state.simulationPhase === "baseline"
                 ? "Baseline set · all network plants online"
-                : `Dallas outage · ${state.assumptions.outageDurationDays}d · ${getStrategyLabel(currentScenario.mode)}`}
+                : `Dallas outage · ${state.assumptions.outageDurationDays}d`}
             </span>
           </div>
         </div>
