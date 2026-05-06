@@ -137,7 +137,13 @@ function mergeResponsePlan(basePlan: ResponsePlan, state: GameState): ResponsePl
     .filter((task) => !state.removedTaskIds.includes(task.id))
     .map((task) => ({ ...task, ...state.planTaskOverrides[task.id] }));
   const tasks = [...baseTasks, ...state.addedPlanTasks];
-  const openTasks = tasks.filter((task) => task.resolution !== "auto-approved" && task.resolution !== "completed" && task.resolution !== "rejected");
+  const openTasks = tasks.filter(
+    (task) =>
+      task.resolution !== "auto-approved" &&
+      task.resolution !== "completed" &&
+      task.resolution !== "user-approved" &&
+      task.resolution !== "rejected",
+  );
   return {
     ...basePlan,
     tasks,
@@ -542,6 +548,7 @@ function reducer(state: GameState, action: Action): GameState {
       return {
         ...state,
         activeScenarioMode: state.simulationPhase === "baseline" ? "baseline" : "manual",
+        selectedTaskId: state.selectedTaskId === action.id ? null : state.selectedTaskId,
         selectedInterventions,
         planTaskOverrides: {
           ...state.planTaskOverrides,

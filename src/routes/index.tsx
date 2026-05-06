@@ -76,6 +76,10 @@ function IndexBody() {
                 : `Dallas outage · ${state.assumptions.outageDurationDays}d`}
             </span>
           </div>
+          <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
+            <span className="w-2 h-2 rounded-full bg-primary pulse-dot" />
+            <span>Command Center Operational</span>
+          </div>
         </div>
       </div>
 

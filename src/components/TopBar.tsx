@@ -1,13 +1,101 @@
 import { motion } from "framer-motion";
+import { useEffect, useMemo, useState } from "react";
 import { useGameState } from "@/lib/game-state";
-import { formatDeltaPct, formatMillions } from "@/lib/scenario";
+import { formatMillions, type ScenarioOutcome, type StrategyMode } from "@/lib/scenario";
+import { SIM_TICK_MS } from "@/lib/sim-config";
+
+function DeltaGlyph({ direction }: { direction: "up" | "down" }) {
+  return (
+    <svg
+      width="9"
+      height="9"
+      viewBox="0 0 9 9"
+      className={direction === "up" ? "text-primary" : "text-sn-danger"}
+      aria-hidden="true"
+    >
+      <path d={direction === "up" ? "M4.5 1 8 7H1z" : "M1 2h7L4.5 8z"} fill="currentColor" />
+    </svg>
+  );
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function seededNoise(seed: number) {
+  const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function getModeBias(mode: StrategyMode) {
+  if (mode === "ai") return 1;
+  if (mode === "manual") return 0.35;
+  return -0.2;
+}
+
+function buildLiveOutcome(
+  outcome: ScenarioOutcome,
+  mode: StrategyMode,
+  seedBase: number,
+) {
+  const modeBias = getModeBias(mode);
+  const revenueWobble = (seededNoise(seedBase + 1) - 0.5) * 420_000 + modeBias * 120_000;
+  const recoveryWobble = (seededNoise(seedBase + 2) - 0.5) * 0.42 - modeBias * 0.12;
+  const serviceWobble = (seededNoise(seedBase + 3) - 0.5) * 0.68 + modeBias * 0.18;
+
+  return {
+    revenueDelta: Math.round(outcome.revenueDelta + revenueWobble),
+    recoveryDays: clamp(outcome.recoveryDays + recoveryWobble, 4, 32),
+    serviceLevelPct: clamp(outcome.serviceLevelPct + serviceWobble, 72, 98.5),
+  };
+}
 
 export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { simDay: number; simHour: number; isPlaying: boolean; onTogglePlay: () => void }) {
-  const { state, scenarios, currentScenario } = useGameState();
+  const { state, scenarios, currentScenario, activeResponsePlan } = useGameState();
   const baseline = scenarios.baseline;
+  const [visualQuarter, setVisualQuarter] = useState(0);
   const progressPct = Math.min(100, (state.lastTick / 12) * 100);
   const phaseOrder = ["baseline", "incident", "response", "recovery", "steady"];
   const activePhaseIndex = phaseOrder.indexOf(state.simulationPhase);
+  const responseIsLive = state.simulationPhase !== "baseline" && activeResponsePlan.status !== "control";
+
+  useEffect(() => {
+    setVisualQuarter(0);
+  }, [simHour, simDay]);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    const interval = setInterval(() => {
+      setVisualQuarter((current) => (current + 1) % 4);
+    }, Math.max(600, SIM_TICK_MS / 4));
+    return () => clearInterval(interval);
+  }, [isPlaying]);
+
+  const visualMinutes = String(visualQuarter * 15).padStart(2, "0");
+  const timeSeed = simDay * 97 + simHour * 13 + visualQuarter * 7 + state.lastTick * 17;
+  const displayedMetrics = useMemo(() => {
+    const liveBaseline = buildLiveOutcome(baseline.outcome, "baseline", timeSeed + 11);
+    const liveCurrent = buildLiveOutcome(currentScenario.outcome, currentScenario.mode, timeSeed + 101);
+
+    return {
+      revenuePrimary: liveCurrent.revenueDelta,
+      recoveryPrimary: liveCurrent.recoveryDays,
+      servicePrimary: liveCurrent.serviceLevelPct,
+      revenueDelta: liveCurrent.revenueDelta - liveBaseline.revenueDelta,
+      recoveryDelta: liveBaseline.recoveryDays - liveCurrent.recoveryDays,
+      serviceDelta: liveCurrent.serviceLevelPct - liveBaseline.serviceLevelPct,
+    };
+  }, [baseline.outcome, currentScenario.mode, currentScenario.outcome, timeSeed]);
+
+  const formatDeltaMillions = (value: number) => `$${(Math.abs(value) / 1_000_000).toFixed(1)}M`;
+  const formatDeltaDays = (value: number) => `${Math.abs(value).toFixed(1)}d`;
+  const formatDeltaPoints = (value: number) => `${Math.abs(value).toFixed(1)} pts`;
+
+  const getMetricTone = (value: number) => {
+    if (Math.abs(value) < 0.05) return "neutral";
+    if (value < 0) return "negative";
+    return responseIsLive ? "positive" : "neutral";
+  };
 
   const timelinePoints = [
     { label: "Baseline Set", time: "T0", phase: "baseline" },
@@ -20,21 +108,21 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
   const plMetrics = [
     {
       label: "Revenue Impact",
-      primary: formatMillions(currentScenario.outcome.revenueDelta),
-      reference: `vs control ${formatMillions(currentScenario.outcome.revenueDelta - baseline.outcome.revenueDelta)}`,
-      positive: currentScenario.outcome.revenueDelta > baseline.outcome.revenueDelta,
+      primary: formatMillions(displayedMetrics.revenuePrimary),
+      delta: displayedMetrics.revenueDelta,
+      deltaLabel: formatDeltaMillions(displayedMetrics.revenueDelta),
     },
     {
-      label: "Recovery (days)",
-      primary: `${currentScenario.outcome.recoveryDays.toFixed(1)}d`,
-      reference: `vs control ${(baseline.outcome.recoveryDays - currentScenario.outcome.recoveryDays).toFixed(1)}d`,
-      positive: currentScenario.outcome.recoveryDays < baseline.outcome.recoveryDays,
+      label: "Recovery",
+      primary: `${displayedMetrics.recoveryPrimary.toFixed(1)}d`,
+      delta: displayedMetrics.recoveryDelta,
+      deltaLabel: formatDeltaDays(displayedMetrics.recoveryDelta),
     },
     {
       label: "Service Level",
-      primary: `${currentScenario.outcome.serviceLevelPct.toFixed(1)}%`,
-      reference: `vs control ${formatDeltaPct(currentScenario.outcome.serviceLevelPct - baseline.outcome.serviceLevelPct)}`,
-      positive: currentScenario.outcome.serviceLevelPct >= baseline.outcome.serviceLevelPct,
+      primary: `${displayedMetrics.servicePrimary.toFixed(1)}%`,
+      delta: displayedMetrics.serviceDelta,
+      deltaLabel: formatDeltaPoints(displayedMetrics.serviceDelta),
     },
   ];
 
@@ -47,7 +135,7 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
           initial={{ opacity: 0.7 }}
           animate={{ opacity: 1 }}
         >
-          DAY {simDay}, {String(simHour).padStart(2, "0")}:00
+          DAY {simDay}, {String(simHour).padStart(2, "0")}:{visualMinutes}
         </motion.div>
       </div>
 
@@ -114,9 +202,27 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
         {plMetrics.map((m) => (
           <div key={m.label} className="min-w-[124px]">
             <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{m.label}</div>
-            <div className="mt-0.5 text-sm font-mono text-foreground">{m.primary}</div>
-            <div className={`text-[10px] font-mono mt-1 ${m.positive ? "text-primary" : "text-sn-danger"}`}>
-              {m.reference}
+            <motion.div
+              key={`${m.label}-${simDay}-${simHour}-${visualQuarter}-${m.primary}`}
+              initial={{ opacity: 0.55, y: 2 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.28 }}
+              className="mt-0.5 text-sm font-mono text-foreground"
+            >
+              {m.primary}
+            </motion.div>
+            <div
+              className={`mt-1 flex items-center gap-1 text-[10px] font-mono ${
+                getMetricTone(m.delta) === "positive"
+                  ? "text-primary"
+                  : getMetricTone(m.delta) === "negative"
+                    ? "text-sn-danger"
+                    : "text-muted-foreground"
+              }`}
+            >
+              {getMetricTone(m.delta) === "positive" && <DeltaGlyph direction="up" />}
+              {getMetricTone(m.delta) === "negative" && <DeltaGlyph direction="down" />}
+              <span>{getMetricTone(m.delta) === "neutral" ? "No delta" : m.deltaLabel}</span>
             </div>
           </div>
         ))}

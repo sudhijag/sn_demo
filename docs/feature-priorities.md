@@ -322,6 +322,7 @@ Make strategy exploration feel deliberate and reusable rather than ephemeral.
 
 Status:
 
+- `[~]` Deprioritize multi-branch scenario/version complexity until the core command-center loop feels crisp and game-like.
 - `[ ]` Support first-class scenario versions.
 - `[ ]` Persist assumptions per scenario version.
 - `[ ]` Persist intervention bundles as named plans.
@@ -337,6 +338,10 @@ Suggested commit checkpoints:
 
 - `feat: add scenario versioning`
 - `feat: support named intervention plans`
+
+Working note:
+
+- Scenario branching is useful, but it is now explicitly lower priority than game feel, task-queue clarity, and the core 5-minute command-center loop.
 
 ### Phase 5: Board-Ready Outputs and Trust Layer
 
@@ -390,6 +395,74 @@ Suggested commit checkpoints:
 - `feat: make chat an always-visible command center`
 - `feat: support approval and modification through chat`
 
+### Phase 7: Gamification and Game Feel
+
+Goal:
+Make the demo feel more alive, legible, and satisfying without turning it into a toy.
+
+Status:
+
+- `[ ]` Smooth the visible time progression so the simulation feels continuous even when state updates are coarse.
+- `[ ]` Add more rewarding feedback around task resolution, approvals, and autonomous AI actions.
+- `[ ]` Introduce clearer response beats so the disruption, remediation, and recovery phases feel like a playable arc.
+- `[ ]` Add light progression and tension cues that help the audience feel the stakes within five minutes.
+
+Acceptance criteria:
+
+- The simulation feels active even when the underlying model is still simple.
+- Executives can sense momentum and consequence from actions without needing deep training.
+- The product feels more engaging than a technical dashboard while staying decision-oriented.
+
+Suggested commit checkpoints:
+
+- `feat: improve simulation pacing and feedback`
+- `feat: add light gamification to command center loop`
+
+Epic candidates under consideration:
+
+- Policy cards
+  Framing:
+  Doctrine cards that change response thresholds, approval behavior, KPI weighting, or scenario bonuses.
+  Why it matters:
+  This is the strongest near-term gamification direction because it fits the command-center loop and creates visible strategic choice without turning the product into a toy.
+- Skill points / progression tree
+  Framing:
+  Unlockable investments in areas such as command center automation, logistics, plant ops, and supplier intelligence.
+  Why it matters:
+  This is a medium-lift progression layer that can build naturally on top of policy cards once the first strategy layer feels fun.
+- End-of-sim badges / accomplishments
+  Framing:
+  Awards players for how they handled the disruption, not just whether they won.
+  Why it matters:
+  This is the best lightweight output to add before deeper progression systems because it makes runs feel legible, shareable, and replayable.
+- Leaderboard
+  Low-lift version:
+  Add a post-sim scoreboard or local leaderboard view using badges, accomplishments, and final KPI outcomes.
+  Higher-lift version:
+  Add an org-wide competitive leaderboard with persistence, identity, and shared comparison across users.
+  Recommendation:
+  Treat the lightweight post-sim leaderboard as a realistic near-term epic and keep the org-wide version deferred unless we explicitly want auth and storage work.
+
+Wishlist / experiments:
+
+- Cute cutscene / transition moments
+  Framing:
+  Short, stylized incident or recovery beats that add emotional pacing and make the simulation feel more authored.
+  Recommendation:
+  This is desirable polish, but it is not core-loop critical and should stay wishlist unless we intentionally scope it down to simple UI-native transitions rather than motion-heavy scenes.
+
+Recommended prioritization:
+
+- Now / likely epic
+  Policy cards
+  Badges / accomplishments
+  Lightweight post-sim leaderboard
+- Next / depends on appetite
+  Skill points / progression tree
+- Wishlist / research
+  Org-wide competitive leaderboard
+  Cute cutscene or incident/recovery vignette system
+
 ## Near-Term Working Sequence
 
 This is the intended order for the next implementation passes:
@@ -397,10 +470,11 @@ This is the intended order for the next implementation passes:
 1. Finish pushing scenario-derived state into the center-stage visuals.
 2. Remove the highest-value remaining hardcoded metrics and banners.
 3. Make the selected strategy visibly influence the network map and top-level summary.
-4. Add lightweight scenario versioning so we can preserve baseline/manual/AI and branch from them cleanly.
-5. Deepen the command-center workflow so chat can approve and modify actions more naturally.
-6. Tighten the executive console output formatting and follow-up behavior.
-7. Add export and trust-layer features only after the main five-minute loop feels crisp.
+4. Deepen the command-center workflow so chat can approve and modify actions more naturally.
+5. Tighten the executive console output formatting and follow-up behavior.
+6. Improve pacing, task feedback, and light gamification so the demo feels more playable.
+7. Revisit scenario versioning only after the command-center loop and game feel are solid.
+8. Add export and trust-layer features only after the main five-minute loop feels crisp.
 
 ## Working Principles While Implementing
 
