@@ -5,8 +5,8 @@ import NetworkMap from "../components/NetworkMap";
 import ChatPanel from "../components/ChatPanel";
 import BuildPalette from "../components/BuildPalette";
 import PlantDetail from "../components/PlantDetail";
+import EndgameLeaderboard from "../components/EndgameLeaderboard";
 import { GameStateProvider, useGameState } from "@/lib/game-state";
-import { getStrategyLabel } from "@/lib/scenario";
 import { SIM_TICK_MS } from "@/lib/sim-config";
 
 export const Route = createFileRoute("/")({
@@ -31,7 +31,9 @@ function IndexBody() {
   const [simDay, setSimDay] = useState(11);
   const [simHour, setSimHour] = useState(6);
   const [isPlaying, setIsPlaying] = useState(true);
-  const { tick, state, currentScenario } = useGameState();
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [leaderboardShown, setLeaderboardShown] = useState(false);
+  const { tick, state } = useGameState();
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -47,6 +49,13 @@ function IndexBody() {
     }, SIM_TICK_MS);
     return () => clearInterval(interval);
   }, [isPlaying, tick]);
+
+  useEffect(() => {
+    if (state.simulationPhase !== "steady" || leaderboardShown) return;
+    setIsPlaying(false);
+    setShowLeaderboard(true);
+    setLeaderboardShown(true);
+  }, [leaderboardShown, state.simulationPhase]);
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
@@ -98,6 +107,7 @@ function IndexBody() {
 
       {/* Plant detail drawer (global, mounted once) */}
       <PlantDetail />
+      <EndgameLeaderboard open={showLeaderboard} onClose={() => setShowLeaderboard(false)} />
     </div>
   );
 }

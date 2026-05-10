@@ -450,6 +450,8 @@ Wishlist / experiments:
   Short, stylized incident or recovery beats that add emotional pacing and make the simulation feel more authored.
   Recommendation:
   This is desirable polish, but it is not core-loop critical and should stay wishlist unless we intentionally scope it down to simple UI-native transitions rather than motion-heavy scenes.
+  Working note:
+  This bucket can include a stronger game-start animation before the clock begins and a game-end animation before or around the final leaderboard reveal.
 
 Recommended prioritization:
 
