@@ -80,7 +80,7 @@ function IndexBody() {
             <path d="M16 7C11.03 7 7 11.03 7 16s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9zm0 14.4c-2.98 0-5.4-2.42-5.4-5.4S13.02 10.6 16 10.6s5.4 2.42 5.4 5.4-2.42 5.4-5.4 5.4z" fill="var(--sn-navy)" />
           </svg>
           <div>
-            <span className="text-xl font-bold text-foreground tracking-tight">Manufacturing Tycoon</span>
+            <span className="text-xl font-bold text-foreground tracking-tight">Tycoon</span>
             <span className="text-[10px] text-muted-foreground ml-2">ServiceNow AI Platform</span>
           </div>
         </div>
