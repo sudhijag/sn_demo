@@ -4,6 +4,7 @@ import TopBar from "../components/TopBar";
 import NetworkMap from "../components/NetworkMap";
 import ChatPanel from "../components/ChatPanel";
 import BuildPalette from "../components/BuildPalette";
+import KPIPanel from "../components/KPIPanel";
 import PlantDetail from "../components/PlantDetail";
 import EndgameLeaderboard from "../components/EndgameLeaderboard";
 import { GameStateProvider, useGameState } from "@/lib/game-state";
@@ -108,6 +109,7 @@ function IndexBody() {
       <div className="flex flex-1 min-h-0">
         <div className="flex-1 flex flex-col min-w-0 relative">
           <NetworkMap simDay={simDay} simHour={simHour} />
+          <KPIPanel />
           <BuildPalette />
         </div>
 
