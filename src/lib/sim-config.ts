@@ -1,4 +1,4 @@
-export const SIM_TICK_MS = 8000;
+export const SIM_TICK_MS = 6667;
 export const SIM_PHASE_TICKS = {
   baseline: 3,
   incident: 6,

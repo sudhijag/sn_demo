@@ -237,7 +237,12 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
   const scenarioFlows = useMemo(
     () => flows.map((flow, index) => ({
       ...flow,
-      disrupted: state.simulationPhase === "baseline" ? false : flow.disrupted ? index >= mitigatedFlowCount : false,
+      disrupted:
+        state.simulationPhase === "baseline" || state.simulationPhase === "steady"
+          ? false
+          : flow.disrupted
+            ? index >= mitigatedFlowCount
+            : false,
     })),
     [mitigatedFlowCount, state.simulationPhase],
   );

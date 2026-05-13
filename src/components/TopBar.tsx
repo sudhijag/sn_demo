@@ -34,20 +34,31 @@ function getModeBias(mode: StrategyMode) {
   return -0.2;
 }
 
+function easeOut(value: number) {
+  return 1 - (1 - value) ** 2;
+}
+
 function buildLiveOutcome(
+  baselineOutcome: ScenarioOutcome,
   outcome: ScenarioOutcome,
   mode: StrategyMode,
   seedBase: number,
+  progression: number,
 ) {
   const modeBias = getModeBias(mode);
-  const revenueWobble = (seededNoise(seedBase + 1) - 0.5) * 420_000 + modeBias * 120_000;
-  const recoveryWobble = (seededNoise(seedBase + 2) - 0.5) * 0.42 - modeBias * 0.12;
-  const serviceWobble = (seededNoise(seedBase + 3) - 0.5) * 0.68 + modeBias * 0.18;
+  const settledProgress = easeOut(progression);
+  const volatility = 0.25 + settledProgress * 1.35;
+  const revenueTarget = baselineOutcome.revenueDelta + (outcome.revenueDelta - baselineOutcome.revenueDelta) * settledProgress;
+  const recoveryTarget = baselineOutcome.recoveryDays + (outcome.recoveryDays - baselineOutcome.recoveryDays) * settledProgress;
+  const serviceTarget = baselineOutcome.serviceLevelPct + (outcome.serviceLevelPct - baselineOutcome.serviceLevelPct) * settledProgress;
+  const revenueWobble = (seededNoise(seedBase + 1) - 0.5) * 780_000 * volatility + modeBias * 165_000 * settledProgress;
+  const recoveryWobble = (seededNoise(seedBase + 2) - 0.5) * 0.85 * volatility - modeBias * 0.14 * settledProgress;
+  const serviceWobble = (seededNoise(seedBase + 3) - 0.5) * 1.15 * volatility + modeBias * 0.24 * settledProgress;
 
   return {
-    revenueDelta: Math.round(outcome.revenueDelta + revenueWobble),
-    recoveryDays: clamp(outcome.recoveryDays + recoveryWobble, 4, 32),
-    serviceLevelPct: clamp(outcome.serviceLevelPct + serviceWobble, 72, 98.5),
+    revenueDelta: Math.round(revenueTarget + revenueWobble),
+    recoveryDays: clamp(recoveryTarget + recoveryWobble, 4, 32),
+    serviceLevelPct: clamp(serviceTarget + serviceWobble, 72, 98.5),
   };
 }
 
@@ -75,9 +86,10 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
 
   const visualMinutes = String(visualQuarter * 15).padStart(2, "0");
   const timeSeed = simDay * 97 + simHour * 13 + visualQuarter * 7 + state.lastTick * 17;
+  const scenarioProgress = clamp((state.lastTick - 5) / 7, 0, 1);
   const displayedMetrics = useMemo(() => {
-    const liveBaseline = buildLiveOutcome(baseline.outcome, "baseline", timeSeed + 11);
-    const liveCurrent = buildLiveOutcome(currentScenario.outcome, currentScenario.mode, timeSeed + 101);
+    const liveBaseline = buildLiveOutcome(baseline.outcome, baseline.outcome, "baseline", timeSeed + 11, 0.18 + state.lastTick / 18);
+    const liveCurrent = buildLiveOutcome(baseline.outcome, currentScenario.outcome, currentScenario.mode, timeSeed + 101, scenarioProgress);
 
     return {
       revenuePrimary: liveCurrent.revenueDelta,
@@ -87,7 +99,7 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
       recoveryDelta: liveBaseline.recoveryDays - liveCurrent.recoveryDays,
       serviceDelta: liveCurrent.serviceLevelPct - liveBaseline.serviceLevelPct,
     };
-  }, [baseline.outcome, currentScenario.mode, currentScenario.outcome, timeSeed]);
+  }, [baseline.outcome, currentScenario.mode, currentScenario.outcome, scenarioProgress, state.lastTick, timeSeed]);
 
   const formatDeltaMillions = (value: number) => `$${(Math.abs(value) / 1_000_000).toFixed(1)}M`;
   const formatDeltaDays = (value: number) => `${Math.abs(value).toFixed(1)}d`;

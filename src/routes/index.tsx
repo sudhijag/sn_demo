@@ -31,7 +31,7 @@ function Index() {
 function IndexBody() {
   const [simDay, setSimDay] = useState(11);
   const [simHour, setSimHour] = useState(6);
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [leaderboardShown, setLeaderboardShown] = useState(false);
   const { tick, state } = useGameState();
@@ -63,8 +63,11 @@ function IndexBody() {
   useEffect(() => {
     if (state.simulationPhase !== "steady" || leaderboardShown) return;
     setIsPlaying(false);
-    setShowLeaderboard(true);
-    setLeaderboardShown(true);
+    const timeout = window.setTimeout(() => {
+      setShowLeaderboard(true);
+      setLeaderboardShown(true);
+    }, 700);
+    return () => window.clearTimeout(timeout);
   }, [leaderboardShown, state.simulationPhase]);
 
   return (
@@ -90,7 +93,9 @@ function IndexBody() {
               <path d="M18 9a9 9 0 0 1-9 9" />
             </svg>
             <span className="text-[11px] font-mono text-primary">
-              {state.simulationPhase === "baseline"
+              {state.lastTick === 0
+                ? "Ready to set baseline · press play to begin"
+                : state.simulationPhase === "baseline"
                 ? "Baseline set · all network plants online"
                 : `Dallas outage · ${state.assumptions.outageDurationDays}d`}
             </span>
