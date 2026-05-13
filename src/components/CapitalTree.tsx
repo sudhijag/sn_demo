@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Network, ShieldPlus, Users, Truck } from "lucide-react";
+import { Lock, Network, ShieldPlus, Users, Truck } from "lucide-react";
 import { useGameState } from "@/lib/game-state";
 import { formatInvestmentCost, type InvestmentTrack } from "@/lib/scenario";
 
@@ -12,8 +12,7 @@ const TRACK_META: Record<InvestmentTrack, { label: string; icon: ReactNode }> = 
 };
 
 function TreeNode({
-  tierLabel,
-  title,
+  label,
   description,
   cost,
   purchased,
@@ -21,8 +20,7 @@ function TreeNode({
   locked,
   onClick,
 }: {
-  tierLabel: string;
-  title: string;
+  label: string;
   description: string;
   cost: number;
   purchased: boolean;
@@ -30,6 +28,8 @@ function TreeNode({
   locked: boolean;
   onClick: () => void;
 }) {
+  const shortDescription = description.length > 72 ? `${description.slice(0, 69).trimEnd()}...` : description;
+
   return (
     <button
       onClick={onClick}
@@ -44,28 +44,16 @@ function TreeNode({
               : "border-border/60 bg-background/30 opacity-65"
       }`}
     >
-      <div className="mb-2 text-[9px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
-        {tierLabel}
-      </div>
       <div className="flex items-start justify-between gap-2">
-        <div className="text-[11px] font-semibold text-foreground">{title}</div>
+        <div className="text-[13px] font-semibold leading-tight text-foreground">{label}</div>
         <div className="text-[10px] font-mono text-primary">{formatInvestmentCost(cost)}</div>
       </div>
-      <div className="mt-1 text-[10px] leading-tight text-muted-foreground">{description}</div>
-      <div className="mt-2 text-[9px] font-mono uppercase tracking-[0.12em]">
-        <span
-          className={
-            purchased
-              ? "text-primary"
-              : available
-                ? "text-sn-green"
-                : locked
-                  ? "text-sn-warning"
-                  : "text-muted-foreground"
-          }
-        >
-          {purchased ? "Funded" : available ? "Ready to fund" : locked ? "Locked" : "Need cash"}
+      <div className="mt-2 text-[12px] leading-snug text-muted-foreground">{shortDescription}</div>
+      <div className="mt-2 flex items-center justify-between text-[9px] font-mono uppercase tracking-[0.12em]">
+        <span className={purchased ? "text-primary" : !available && !locked ? "text-sn-danger" : "text-muted-foreground"}>
+          {purchased ? "Funded" : available ? "" : locked ? "" : "Need cash"}
         </span>
+        {locked && <Lock size={12} className="text-sn-warning" />}
       </div>
     </button>
   );
@@ -102,8 +90,7 @@ export default function CapitalTree() {
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">Investment Tree</div>
-                <div className="mt-1 text-lg font-semibold text-foreground">Capital Allocation</div>
+                <div className="text-2xl font-semibold tracking-tight text-foreground">Investment Tree</div>
               </div>
               <div className="rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-right">
                 <div className="text-[9px] font-mono uppercase tracking-[0.16em] text-primary/80">Remaining Pool</div>
@@ -114,14 +101,13 @@ export default function CapitalTree() {
             <div className="mt-4 space-y-3">
               {grouped.map((group) => (
                 <div key={group.track} className="rounded-2xl border border-border bg-secondary/18 px-3 py-3">
-                  <div className="mb-3 flex items-center gap-2 text-[11px] font-semibold text-foreground">
+                  <div className="mb-3 flex items-center gap-2 text-lg font-semibold text-foreground">
                     <span className="text-primary">{group.icon}</span>
                     {group.label}
                   </div>
                   <div className="relative flex items-center justify-between gap-3">
                     <TreeNode
                       {...group.tierOne}
-                      tierLabel="Tier 1"
                       onClick={() => purchaseInvestment(group.tierOne.id)}
                     />
                     <div className="pointer-events-none absolute left-[13rem] right-[13rem] top-1/2 h-[2px] -translate-y-1/2 bg-border">
@@ -132,7 +118,6 @@ export default function CapitalTree() {
                     </div>
                     <TreeNode
                       {...group.tierTwo}
-                      tierLabel="Tier 2"
                       onClick={() => purchaseInvestment(group.tierTwo.id)}
                     />
                   </div>

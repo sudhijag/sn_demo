@@ -47,13 +47,13 @@ function buildLiveOutcome(
 ) {
   const modeBias = getModeBias(mode);
   const settledProgress = easeOut(progression);
-  const volatility = 0.25 + settledProgress * 1.35;
+  const volatility = 0.18 + settledProgress * 0.72;
   const revenueTarget = baselineOutcome.revenueDelta + (outcome.revenueDelta - baselineOutcome.revenueDelta) * settledProgress;
   const recoveryTarget = baselineOutcome.recoveryDays + (outcome.recoveryDays - baselineOutcome.recoveryDays) * settledProgress;
   const serviceTarget = baselineOutcome.serviceLevelPct + (outcome.serviceLevelPct - baselineOutcome.serviceLevelPct) * settledProgress;
-  const revenueWobble = (seededNoise(seedBase + 1) - 0.5) * 780_000 * volatility + modeBias * 165_000 * settledProgress;
-  const recoveryWobble = (seededNoise(seedBase + 2) - 0.5) * 0.85 * volatility - modeBias * 0.14 * settledProgress;
-  const serviceWobble = (seededNoise(seedBase + 3) - 0.5) * 1.15 * volatility + modeBias * 0.24 * settledProgress;
+  const revenueWobble = (seededNoise(seedBase + 1) - 0.5) * 420_000 * volatility + modeBias * 95_000 * settledProgress;
+  const recoveryWobble = (seededNoise(seedBase + 2) - 0.5) * 0.48 * volatility - modeBias * 0.08 * settledProgress;
+  const serviceWobble = (seededNoise(seedBase + 3) - 0.5) * 0.62 * volatility + modeBias * 0.12 * settledProgress;
 
   return {
     revenueDelta: Math.round(revenueTarget + revenueWobble),
@@ -120,7 +120,7 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
   ];
   const plMetrics = [
     {
-      label: "Revenue Impact",
+      label: "Profit Impact",
       primary: formatMillions(displayedMetrics.revenuePrimary),
       delta: displayedMetrics.revenueDelta,
       deltaLabel: formatDeltaMillions(displayedMetrics.revenueDelta),

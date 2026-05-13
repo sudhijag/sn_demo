@@ -189,7 +189,7 @@ function ProductionStack({ status }: { status: PlantStatus }) {
 function TruckGlyph({ disrupted = false }: { disrupted?: boolean }) {
   const cargo = disrupted ? "var(--sn-danger)" : "var(--sn-green)";
   return (
-    <g>
+    <g transform="scale(-1, 1)">
       <circle cx={-2} cy={0} r={7} fill="var(--sn-navy)" opacity={0.55} />
       <rect x={-3} y={-4} width={8} height={7} fill={cargo} stroke="oklch(0.95 0.02 240)" strokeWidth={0.6} />
       <line x1={-0.5} y1={-4} x2={-0.5} y2={3} stroke="var(--sn-navy)" strokeWidth={0.35} opacity={0.55} />

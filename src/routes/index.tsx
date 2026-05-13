@@ -67,7 +67,7 @@ function IndexBody() {
     const timeout = window.setTimeout(() => {
       setShowLeaderboard(true);
       setLeaderboardShown(true);
-    }, 700);
+    }, 6000);
     return () => window.clearTimeout(timeout);
   }, [leaderboardShown, state.simulationPhase]);
 
@@ -76,10 +76,7 @@ function IndexBody() {
       {/* Brand header */}
       <div className="flex items-center justify-between px-5 py-2.5 bg-sn-navy border-b border-border">
         <div className="flex items-center gap-3">
-          <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
-            <rect width="32" height="32" rx="6" fill="var(--sn-green)" />
-            <path d="M16 7C11.03 7 7 11.03 7 16s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9zm0 14.4c-2.98 0-5.4-2.42-5.4-5.4S13.02 10.6 16 10.6s5.4 2.42 5.4 5.4-2.42 5.4-5.4 5.4z" fill="var(--sn-navy)" />
-          </svg>
+          <img src="/icon.png" alt="" className="h-7 w-7 rounded-md object-cover" />
           <div>
             <span className="text-xl font-bold text-foreground tracking-tight">Tycoon</span>
             <span className="text-[10px] text-muted-foreground ml-2">ServiceNow AI Platform</span>

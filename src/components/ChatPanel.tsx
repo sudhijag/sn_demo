@@ -148,7 +148,7 @@ export default function ChatPanel() {
   const completedTasks = sortedTasks.filter(
     (task) => task.resolution === "auto-approved" || task.resolution === "completed" || task.resolution === "user-approved",
   );
-  const safeTasks = openTasks.filter((task) => isSafeTask(task));
+  const highConfidenceTasks = openTasks.filter((task) => isSafeTask(task) && task.confidenceBand === "high");
 
   useEffect(() => {
     if (state.planEditMode) {
@@ -230,24 +230,15 @@ export default function ChatPanel() {
         <div className="border-r border-border min-h-0 flex flex-col">
           <div className="px-3 py-3 border-b border-border space-y-2">
             <div className="card-surface px-3 py-2 max-w-[25rem] min-h-[5.75rem]">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <div className="text-[11px] font-semibold text-foreground">
-                    {state.simulationPhase === "baseline" ? "Plan workspace" : "Dallas remediation plan"}
-                  </div>
-                  {state.simulationPhase !== "baseline" && (
-                    <div className="mt-1 text-[10px] text-muted-foreground leading-tight">
-                      Response actions and exceptions generated for the Dallas disruption.
-                    </div>
-                  )}
+              <div>
+                <div className="text-[11px] font-semibold text-foreground">
+                  {state.simulationPhase === "baseline" ? "Make Plan" : "Dallas remediation plan"}
                 </div>
-                <button
-                  onClick={() => setPlanEditMode(!state.planEditMode)}
-                  disabled={state.simulationPhase === "baseline"}
-                  className="px-2.5 py-1.5 rounded-md border border-border bg-secondary hover:bg-sn-surface-hover text-[10px] font-medium text-foreground transition-colors disabled:opacity-35 disabled:hover:bg-secondary"
-                >
-                  {state.planEditMode ? "Done Editing" : "Edit Plan"}
-                </button>
+                {state.simulationPhase !== "baseline" && (
+                  <div className="mt-1 text-[10px] text-muted-foreground leading-tight">
+                    Response actions and exceptions generated for the Dallas disruption.
+                  </div>
+                )}
               </div>
               <div className="mt-2 flex items-center gap-1.5 flex-wrap">
                 {state.simulationPhase === "baseline" ? (
@@ -268,17 +259,17 @@ export default function ChatPanel() {
               <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">Task Queue</div>
               <button
                 onClick={autoApproveSafeTasks}
-                disabled={safeTasks.length === 0}
+                disabled={highConfidenceTasks.length === 0}
                 className="px-2.5 py-1.5 rounded-md bg-primary text-primary-foreground text-[10px] font-medium disabled:opacity-30 hover:opacity-90 transition-opacity"
               >
-                Auto-approve safe tasks
+                Auto-approve high-confidence
               </button>
             </div>
           </div>
 
           <div className="px-3 py-3 min-h-0 flex-1">
             <div className="card-surface overflow-hidden h-full flex flex-col">
-              <div className="grid grid-cols-[1.7fr_0.8fr_0.8fr_0.95fr] gap-2 px-3 py-2 text-[9px] font-mono uppercase tracking-[0.12em] text-muted-foreground border-b border-border">
+              <div className="grid grid-cols-[1.7fr_0.8fr_0.8fr_0.95fr] gap-2 px-3 py-2 text-[9px] font-mono uppercase tracking-[0.12em] text-foreground/80 border-b border-border">
                 <div>Task</div>
                 <div>Owner</div>
                 <div>Confidence</div>
@@ -295,11 +286,11 @@ export default function ChatPanel() {
                   >
                     <div>
                       <div className="text-[11px] font-semibold text-foreground">{task.title}</div>
-                      <div className="mt-0.5 text-[9px] font-mono uppercase tracking-[0.12em] text-muted-foreground">
+                      <div className="mt-0.5 text-[9px] font-mono uppercase tracking-[0.12em] text-foreground/70">
                         {task.estimatedCost > 0 ? `$${Math.round(task.estimatedCost / 1000)}K stake` : "No spend"} · {task.confidenceBand} certainty
                       </div>
                     </div>
-                    <div className="text-[10px] text-muted-foreground self-center">{task.owner.replace("_", " ")}</div>
+                    <div className="text-[10px] text-foreground/75 self-center">{task.owner.replace("_", " ")}</div>
                     <div className="self-center">
                       <div className="flex flex-col gap-1">
                         <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
@@ -336,11 +327,11 @@ export default function ChatPanel() {
                       >
                         <div>
                           <div className="text-[11px] text-foreground">{task.title}</div>
-                          <div className="text-[9px] font-mono uppercase tracking-[0.12em] text-muted-foreground">
-                            {task.estimatedCost > 0 ? `$${Math.round(task.estimatedCost / 1000)}K stake` : "No spend"} · {task.confidenceBand} certainty
-                          </div>
+                        <div className="text-[9px] font-mono uppercase tracking-[0.12em] text-foreground/70">
+                          {task.estimatedCost > 0 ? `$${Math.round(task.estimatedCost / 1000)}K stake` : "No spend"} · {task.confidenceBand} certainty
                         </div>
-                        <div className="text-[10px] text-muted-foreground self-center">{task.owner.replace("_", " ")}</div>
+                      </div>
+                        <div className="text-[10px] text-foreground/75 self-center">{task.owner.replace("_", " ")}</div>
                         <div className="self-center">
                           <div className="flex flex-col gap-1">
                             <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
@@ -387,7 +378,7 @@ export default function ChatPanel() {
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <button onClick={() => approveTask(selectedTask)} className="px-2.5 py-1 rounded-md bg-primary text-primary-foreground text-[10px] font-medium">Approve</button>
                     <button onClick={() => modifyTask(selectedTask)} className="px-2.5 py-1 rounded-md bg-secondary text-foreground text-[10px] font-medium border border-border">Modify</button>
-                    <button onClick={() => rejectTask(selectedTask)} className="px-2.5 py-1 rounded-md bg-secondary text-foreground text-[10px] font-medium border border-border">Reject</button>
+                    <button onClick={() => rejectTask(selectedTask)} className="px-2.5 py-1 rounded-md bg-sn-danger/15 text-sn-danger text-[10px] font-medium border border-sn-danger/40 hover:bg-sn-danger/20">Reject</button>
                   </div>
                 </>
               ) : (

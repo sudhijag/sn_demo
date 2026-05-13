@@ -204,7 +204,7 @@ export default function EndgameLeaderboard({
                   <div className="text-[11px] uppercase tracking-[0.18em] text-primary/80">Your Run</div>
                   <div className="mt-2 text-2xl font-semibold text-foreground">{score} pts · Rank #{leaderboard.find((entry) => entry.isPlayer)?.rank}</div>
                   <div className="mt-2 text-sm text-muted-foreground">
-                    {currentScenario.label} closed the incident with {currentScenario.outcome.serviceLevelPct.toFixed(1)}% service and recovery in{" "}
+                    {currentScenario.mode === "manual" ? "Response" : currentScenario.label} closed the incident with {currentScenario.outcome.serviceLevelPct.toFixed(1)}% service and recovery in{" "}
                     {currentScenario.outcome.recoveryDays.toFixed(1)} days.
                   </div>
                 </div>

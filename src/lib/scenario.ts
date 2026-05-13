@@ -155,7 +155,7 @@ export const BASELINE_ASSUMPTIONS: ScenarioAssumptions = {
   skuPriority: "all",
 };
 
-export const STARTING_INVESTMENT_CAPITAL = 3_200_000;
+export const STARTING_INVESTMENT_CAPITAL = 1_100_000;
 
 export const INVESTMENT_LIBRARY: InvestmentDefinition[] = [
   {
@@ -591,7 +591,7 @@ function getActionControls(type: InterventionType, mode: StrategyMode): Pick<Pla
   }
 
   if (type === "prioritize_skus" || type === "shift_labor") {
-    return { threshold: "L", automation: "auto", resolution: "auto-approved", assignee: "ai" };
+    return { threshold: "L", automation: "modify", resolution: "open", assignee: "ai" };
   }
 
   if (type === "expedite_freight" || type === "open_overflow_capacity") {
@@ -819,29 +819,6 @@ export function generateTaskExplanation(task: PlanTask, scenario: ScenarioVersio
   ].join("\n\n");
 }
 
-function getRiskiestTask(tasks: PlanTask[]) {
-  const confidenceScore: Record<TaskConfidenceBand, number> = {
-    low: 0,
-    medium: 1,
-    high: 2,
-  };
-  const priorityScore: Record<TaskPriority, number> = {
-    high: 0,
-    medium: 1,
-    low: 2,
-  };
-
-  return [...tasks].sort((a, b) => {
-    if (confidenceScore[a.confidenceBand] !== confidenceScore[b.confidenceBand]) {
-      return confidenceScore[a.confidenceBand] - confidenceScore[b.confidenceBand];
-    }
-    if (priorityScore[a.priority] !== priorityScore[b.priority]) {
-      return priorityScore[a.priority] - priorityScore[b.priority];
-    }
-    return a.title.localeCompare(b.title);
-  })[0] ?? null;
-}
-
 export function generateExecutiveAnswer(
   question: string,
   scenario: ScenarioVersion,
@@ -852,27 +829,29 @@ export function generateExecutiveAnswer(
   const actionLabels = enabledInterventions.map((type) => interventionByType[type].label);
   const trimmedQuestion = question.trim().toLowerCase();
   const riskQuestion = trimmedQuestion.includes("risk");
-  const riskiestTask = getRiskiestTask(scenario.responsePlan.tasks.filter((task) => task.interventionType !== null));
+  const actionableTasks = scenario.responsePlan.tasks.filter((task) => task.interventionType !== null);
+  const riskyTasks = actionableTasks.filter((task) => task.confidenceBand === "low" || task.priority === "high");
+  const fourthRiskTask = riskyTasks[1] ?? riskyTasks[0] ?? actionableTasks[3] ?? actionableTasks[actionableTasks.length - 1] ?? null;
 
-  if (riskQuestion && riskiestTask) {
+  if (riskQuestion && fourthRiskTask) {
     return {
-      summary: `The biggest risk right now is "${riskiestTask.title}." It has the lowest confidence in the plan, which means the outcome is the least certain.`,
-      recommendedActions: [riskiestTask.suggestedFix],
+      summary: `The risk with the fourth task, "${fourthRiskTask.title}," is execution drift. ${fourthRiskTask.rationale}`,
+      recommendedActions: [fourthRiskTask.suggestedFix],
       responseChecklist: [
-        `Why this is risky: ${riskiestTask.rationale}`,
-        `Priority: ${riskiestTask.priority}`,
-        `Confidence: ${riskiestTask.confidenceBand}`,
+        `Why it can go wrong: ${fourthRiskTask.rationale}`,
+        `Cost exposure: ${fourthRiskTask.estimatedCost > 0 ? formatMillions(fourthRiskTask.estimatedCost) : "No direct spend"}`,
+        `Confidence on this move: ${fourthRiskTask.confidenceBand}`,
       ],
-      estimatedImpact: [riskiestTask.impactSummary],
+      estimatedImpact: [fourthRiskTask.impactSummary],
       assumptions: [
         `${assumptions.outageDurationDays}-day outage`,
         `${assumptions.supplierLeadTimeDays}-day supplier lead time`,
       ],
-      confidence: `${Math.round(outcome.confidencePct)}% scenario confidence overall, but this task is marked ${riskiestTask.confidenceBand} confidence.`,
+      confidence: `${Math.round(outcome.confidencePct)}% scenario confidence overall. This particular move is marked ${fourthRiskTask.confidenceBand} confidence.`,
       followUps: [
-        `What happens if we delay "${riskiestTask.title}"?`,
-        `Show me a safer alternative to "${riskiestTask.title}".`,
-        "Which task has the clearest payoff?",
+        `What happens if we delay "${fourthRiskTask.title}"?`,
+        `Show me a safer version of "${fourthRiskTask.title}".`,
+        `What is the upside if "${fourthRiskTask.title}" works?`,
       ],
     };
   }
