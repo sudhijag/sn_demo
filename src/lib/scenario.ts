@@ -333,61 +333,61 @@ function getActionTemplate(type: InterventionType, assumptions: ScenarioAssumpti
   switch (type) {
     case "reroute_volume":
       return {
-        title: "Reroute Dallas volume",
-        details: `Shift constrained Dallas output into Phoenix, Atlanta, and Los Angeles for the next ${Math.min(assumptions.outageDurationDays, 14)} days.`,
-        rationale: "Dallas disruption is starving downstream plants. Fast lane rerouting restores network flow faster than waiting for on-site recovery.",
+        title: "Move Dallas work to other plants",
+        details: `Temporarily move part of Dallas production to Phoenix, Atlanta, and Los Angeles for the next ${Math.min(assumptions.outageDurationDays, 14)} days.`,
+        rationale: "If we leave the work in Dallas, downstream plants run short. Moving the work buys time while Dallas recovers.",
         owner: "logistics" as const,
-        suggestedFix: "Move 18-22% of Dallas volume into Phoenix, Atlanta, and Los Angeles until the outage stabilizes.",
+        suggestedFix: "Shift about 20% of Dallas volume to Phoenix, Atlanta, and Los Angeles until the outage settles down.",
         priority: "medium" as const,
         confidenceBand: "medium" as const,
       };
     case "add_overtime":
       return {
-        title: "Increase overtime coverage",
-        details: `Increase receiving-plant labor coverage while labor availability is ${assumptions.laborAvailabilityPct}%.`,
-        rationale: "Receiving plants have spare routing paths but not enough labor to absorb the disruption without overtime coverage.",
+        title: "Add overtime at backup plants",
+        details: `Add extra shifts at the receiving plants while labor availability is only ${assumptions.laborAvailabilityPct}%.`,
+        rationale: "The backup plants can take more volume, but only if we put more people on the floor.",
         owner: "plant_ops" as const,
-        suggestedFix: "Approve three weeks of overtime in Phoenix and Atlanta to protect throughput.",
+        suggestedFix: "Approve three weeks of overtime in Phoenix and Atlanta so they can handle the extra work.",
         priority: "medium" as const,
         confidenceBand: "medium" as const,
       };
     case "expedite_freight":
       return {
-        title: "Expedite freight lanes",
-        details: `Upgrade key inbound and cross-country lanes while supplier lead time is ${assumptions.supplierLeadTimeDays} days.`,
-        rationale: "Transit delay is compounding the outage. Expedited freight can recover service quickly but introduces higher execution cost.",
+        title: "Pay for faster freight",
+        details: `Use faster shipping on the most important lanes while supplier lead time is ${assumptions.supplierLeadTimeDays} days.`,
+        rationale: "Faster freight can reduce delays quickly, but it costs more and may not pay off if the outage clears sooner than expected.",
         owner: "logistics" as const,
-        suggestedFix: "Approve expedited freight on the most time-sensitive lanes for the next 10 days.",
+        suggestedFix: "Approve expedited freight only on the most time-sensitive lanes for the next 10 days.",
         priority: "high" as const,
         confidenceBand: "low" as const,
       };
     case "prioritize_skus":
       return {
-        title: "Protect high-priority SKUs",
-        details: `Protect ${assumptions.skuPriority.replace("_", " ")} assortments and defer lower-priority volume.`,
-        rationale: "The network can preserve margin and customer trust by protecting the highest-value demand while constrained capacity is reallocated.",
+        title: "Focus on the most important SKUs",
+        details: `Keep ${assumptions.skuPriority.replace("_", " ")} products moving first and delay lower-priority items.`,
+        rationale: "When capacity is tight, serving the most important products first protects customers and keeps the business impact smaller.",
         owner: "command_center" as const,
-        suggestedFix: "Shift the plan to prioritize strategic and high-margin SKUs until Dallas recovers.",
+        suggestedFix: "Temporarily prioritize strategic and high-margin SKUs until Dallas is stable again.",
         priority: "low" as const,
         confidenceBand: "high" as const,
       };
     case "open_overflow_capacity":
       return {
-        title: "Open overflow capacity",
-        details: "Bring overflow or partner capacity online to preserve service-level commitments.",
-        rationale: "Overflow capacity preserves service under a long outage, but the spend and coordination burden are large enough to require review.",
+        title: "Open partner overflow capacity",
+        details: "Bring in outside or overflow capacity to keep customer commitments on track.",
+        rationale: "This can protect service during a long outage, but it is expensive and takes coordination across partners.",
         owner: "supply_chain" as const,
-        suggestedFix: "Open partner overflow capacity for the next 2-3 weeks if service protection is worth the added cost.",
+        suggestedFix: "Open partner overflow capacity for 2 to 3 weeks if protecting service is worth the added cost.",
         priority: "high" as const,
         confidenceBand: "low" as const,
       };
     case "shift_labor":
       return {
-        title: "Shift labor to constrained sites",
-        details: "Redeploy labor from lower-priority plants into the constrained corridor.",
-        rationale: "Labor can be rebalanced quickly with relatively low risk compared with freight or partner-capacity decisions.",
+        title: "Move labor to the busiest plants",
+        details: "Temporarily move labor from lower-priority sites to the plants under the most pressure.",
+        rationale: "This is usually a quick, lower-risk way to relieve bottlenecks without making a large spend decision.",
         owner: "plant_ops" as const,
-        suggestedFix: "Temporarily redeploy labor into Phoenix and Atlanta receiving lines for the response window.",
+        suggestedFix: "Temporarily redeploy labor into Phoenix and Atlanta receiving lines during the response window.",
         priority: "low" as const,
         confidenceBand: "high" as const,
       };
@@ -426,7 +426,7 @@ function getActionControls(type: InterventionType, mode: StrategyMode): Pick<Pla
 
 function getImpactSummary(type: InterventionType) {
   const intervention = interventionByType[type];
-  return `${formatDeltaPct(intervention.marginLiftPct)} margin · +${intervention.serviceLiftPct.toFixed(1)}pts service · ${intervention.recoveryLiftDays.toFixed(1)}d faster recovery`;
+  return `Estimated effect: ${formatDeltaPct(intervention.marginLiftPct)} margin, +${intervention.serviceLiftPct.toFixed(1)} service points, and ${intervention.recoveryLiftDays.toFixed(1)} days faster recovery.`;
 }
 
 export function isSafeTask(task: PlanTask) {
@@ -485,10 +485,10 @@ export function buildResponsePlan(
         {
           id: "baseline-observe",
           interventionType: null,
-          title: "Observe baseline network",
-          details: "Hold the current operating plan and watch the replay until the disruption begins.",
-          rationale: "The control case establishes the reference outcome before any mitigation actions are introduced.",
-          suggestedFix: "No action yet. Let the replay establish the baseline impact first.",
+          title: "Watch the baseline first",
+          details: "Do not change anything yet. Watch the normal network before the disruption begins.",
+          rationale: "We need a clean baseline so we can measure how much the outage changes performance.",
+          suggestedFix: "No action yet. Let the simulation show the baseline before the outage starts.",
           owner: "command_center",
           assignee: "human",
           priority: "low",
@@ -628,11 +628,35 @@ export function sortPlanTasks(tasks: PlanTask[]) {
 
 export function generateTaskExplanation(task: PlanTask, scenario: ScenarioVersion) {
   return [
-    `${task.title} is flagged because ${task.rationale}`,
-    `Suggested fix: ${task.suggestedFix}`,
-    `Expected impact: ${task.impactSummary}`,
-    `Current resolution: ${task.resolution.replace("-", " ")} with ${Math.round(scenario.outcome.confidencePct)}% overall scenario confidence.`,
+    `Task: ${task.title}`,
+    `Why it matters: ${task.rationale}`,
+    `What to do: ${task.suggestedFix}`,
+    `Expected effect: ${task.impactSummary}`,
+    `Current status: ${task.resolution.replace("-", " ")} with ${Math.round(scenario.outcome.confidencePct)}% overall scenario confidence.`,
   ].join("\n\n");
+}
+
+function getRiskiestTask(tasks: PlanTask[]) {
+  const confidenceScore: Record<TaskConfidenceBand, number> = {
+    low: 0,
+    medium: 1,
+    high: 2,
+  };
+  const priorityScore: Record<TaskPriority, number> = {
+    high: 0,
+    medium: 1,
+    low: 2,
+  };
+
+  return [...tasks].sort((a, b) => {
+    if (confidenceScore[a.confidenceBand] !== confidenceScore[b.confidenceBand]) {
+      return confidenceScore[a.confidenceBand] - confidenceScore[b.confidenceBand];
+    }
+    if (priorityScore[a.priority] !== priorityScore[b.priority]) {
+      return priorityScore[a.priority] - priorityScore[b.priority];
+    }
+    return a.title.localeCompare(b.title);
+  })[0] ?? null;
 }
 
 export function generateExecutiveAnswer(
@@ -643,6 +667,32 @@ export function generateExecutiveAnswer(
   const { assumptions, enabledInterventions, outcome } = scenario;
   const bestIsCurrent = best.mode === scenario.mode;
   const actionLabels = enabledInterventions.map((type) => interventionByType[type].label);
+  const trimmedQuestion = question.trim().toLowerCase();
+  const riskQuestion = trimmedQuestion.includes("risk");
+  const riskiestTask = getRiskiestTask(scenario.responsePlan.tasks.filter((task) => task.interventionType !== null));
+
+  if (riskQuestion && riskiestTask) {
+    return {
+      summary: `The biggest risk right now is "${riskiestTask.title}." It has the lowest confidence in the plan, which means the outcome is the least certain.`,
+      recommendedActions: [riskiestTask.suggestedFix],
+      responseChecklist: [
+        `Why this is risky: ${riskiestTask.rationale}`,
+        `Priority: ${riskiestTask.priority}`,
+        `Confidence: ${riskiestTask.confidenceBand}`,
+      ],
+      estimatedImpact: [riskiestTask.impactSummary],
+      assumptions: [
+        `${assumptions.outageDurationDays}-day outage`,
+        `${assumptions.supplierLeadTimeDays}-day supplier lead time`,
+      ],
+      confidence: `${Math.round(outcome.confidencePct)}% scenario confidence overall, but this task is marked ${riskiestTask.confidenceBand} confidence.`,
+      followUps: [
+        `What happens if we delay "${riskiestTask.title}"?`,
+        `Show me a safer alternative to "${riskiestTask.title}".`,
+        "Which task has the clearest payoff?",
+      ],
+    };
+  }
 
   return {
     summary: `${question.includes("Q3 margin") ? "Q3 margin" : "This scenario"} is projected at ${outcome.marginDeltaPct.toFixed(1)}% versus plan with recovery in ${outcome.recoveryDays.toFixed(1)} days. ${bestIsCurrent ? "Current strategy is already the strongest option." : `${best.label} is outperforming the current strategy on the current decision objective.`}`,

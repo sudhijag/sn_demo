@@ -368,11 +368,12 @@ export default function ChatPanel() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="text-[11px] font-semibold text-foreground">{selectedTask.title}</div>
-                      <div className="mt-1 text-[10px] text-muted-foreground leading-tight">{selectedTask.rationale}</div>
+                      <div className="mt-1 text-[10px] text-muted-foreground leading-tight">{selectedTask.details}</div>
                     </div>
                     <Pill tone={resolutionTone(selectedTask.resolution)}>{formatResolution(selectedTask.resolution)}</Pill>
                   </div>
-                  <div className="text-[10px] text-muted-foreground">Suggested fix: <span className="text-foreground">{selectedTask.suggestedFix}</span></div>
+                  <div className="text-[10px] text-muted-foreground">Why it matters: <span className="text-foreground">{selectedTask.rationale}</span></div>
+                  <div className="text-[10px] text-muted-foreground">What to do: <span className="text-foreground">{selectedTask.suggestedFix}</span></div>
                   <div className="text-[10px] text-muted-foreground">Expected impact: <span className="text-foreground">{selectedTask.impactSummary}</span></div>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <button onClick={() => approveTask(selectedTask)} className="px-2.5 py-1 rounded-md bg-primary text-primary-foreground text-[10px] font-medium">Approve</button>
