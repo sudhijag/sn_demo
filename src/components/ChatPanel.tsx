@@ -295,6 +295,9 @@ export default function ChatPanel() {
                   >
                     <div>
                       <div className="text-[11px] font-semibold text-foreground">{task.title}</div>
+                      <div className="mt-0.5 text-[9px] font-mono uppercase tracking-[0.12em] text-muted-foreground">
+                        {task.estimatedCost > 0 ? `$${Math.round(task.estimatedCost / 1000)}K stake` : "No spend"} · {task.confidenceBand} certainty
+                      </div>
                     </div>
                     <div className="text-[10px] text-muted-foreground self-center">{task.owner.replace("_", " ")}</div>
                     <div className="self-center">
@@ -331,7 +334,12 @@ export default function ChatPanel() {
                           selectedTask?.id === task.id ? "bg-primary/5" : "hover:bg-secondary/70"
                         }`}
                       >
-                        <div className="text-[11px] text-foreground">{task.title}</div>
+                        <div>
+                          <div className="text-[11px] text-foreground">{task.title}</div>
+                          <div className="text-[9px] font-mono uppercase tracking-[0.12em] text-muted-foreground">
+                            {task.estimatedCost > 0 ? `$${Math.round(task.estimatedCost / 1000)}K stake` : "No spend"} · {task.confidenceBand} certainty
+                          </div>
+                        </div>
                         <div className="text-[10px] text-muted-foreground self-center">{task.owner.replace("_", " ")}</div>
                         <div className="self-center">
                           <div className="flex flex-col gap-1">
@@ -373,6 +381,7 @@ export default function ChatPanel() {
                     <Pill tone={resolutionTone(selectedTask.resolution)}>{formatResolution(selectedTask.resolution)}</Pill>
                   </div>
                   <div className="text-[10px] text-muted-foreground">Why it matters: <span className="text-foreground">{selectedTask.rationale}</span></div>
+                  <div className="text-[10px] text-muted-foreground">Stake: <span className="text-foreground">{selectedTask.estimatedCost > 0 ? `$${Math.round(selectedTask.estimatedCost / 1000)}K spend` : "No direct spend"} · {selectedTask.confidenceBand} certainty</span></div>
                   <div className="text-[10px] text-muted-foreground">What to do: <span className="text-foreground">{selectedTask.suggestedFix}</span></div>
                   <div className="text-[10px] text-muted-foreground">Expected impact: <span className="text-foreground">{selectedTask.impactSummary}</span></div>
                   <div className="flex items-center gap-1.5 flex-wrap">

@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { ComposableMap, Geographies, Geography, Marker, Line } from "react-simple-maps";
 import { geoAlbers } from "d3-geo";
 import { useGameState } from "@/lib/game-state";
+import { getInvestmentRuntimeEffects } from "@/lib/scenario";
 import type { Building, BuildingKind, PlantStatus } from "@/lib/buildings";
 
 // Secondary distribution centers / warehouses (real cities, decorative)
@@ -222,6 +223,7 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
   const { state, currentScenario, selectBuilding, placeBuilding } = useGameState();
   const buildings = state.buildings;
   const [hoveredPlant, setHoveredPlant] = useState<string | null>(null);
+  const runtimeEffects = useMemo(() => getInvestmentRuntimeEffects(state.purchasedInvestments), [state.purchasedInvestments]);
 
   // Project seed plants to pixels for tooltip and flows
   const projected = useMemo(() => {
@@ -233,7 +235,10 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
     return map;
   }, [buildings]);
 
-  const mitigatedFlowCount = currentScenario.mode === "ai" ? 2 : currentScenario.mode === "manual" ? 1 : 0;
+  const mitigatedFlowCount = Math.min(
+    3,
+    (currentScenario.mode === "ai" ? 2 : currentScenario.mode === "manual" ? 1 : 0) + runtimeEffects.flowMitigationBonus,
+  );
   const scenarioFlows = useMemo(
     () => flows.map((flow, index) => ({
       ...flow,
@@ -479,7 +484,7 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
             );
           })()}
 
-          <div className="absolute right-3 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-1.5">
+          <div className="absolute bottom-3 right-3 z-10 flex flex-col gap-1.5">
             <button className="h-7 w-7 flex items-center justify-center rounded border border-border bg-card/90 text-muted-foreground shadow-lg backdrop-blur-sm transition-colors hover:text-foreground text-sm">
               +
             </button>

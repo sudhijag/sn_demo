@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { useGameState } from "@/lib/game-state";
-import { formatMillions, type ScenarioOutcome, type StrategyMode } from "@/lib/scenario";
+import { formatInvestmentCost, formatMillions, type ScenarioOutcome, type StrategyMode } from "@/lib/scenario";
 import { SIM_TICK_MS } from "@/lib/sim-config";
 import ROIMemoModal from "./ROIMemoModal";
 
@@ -118,7 +118,6 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
     { label: currentScenario.mode === "baseline" ? "Impact Window" : "Plan Taking Effect", time: "T3", phase: "recovery" },
     { label: "Steady State", time: "T4", phase: "steady" },
   ];
-
   const plMetrics = [
     {
       label: "Revenue Impact",
@@ -257,6 +256,10 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
         </div>
 
         <div className="flex items-center gap-2 border-l border-border pl-5">
+          <div className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-right">
+            <div className="text-[9px] font-mono uppercase tracking-[0.14em] text-primary/80">Capital Pool</div>
+            <div className="text-sm font-mono text-primary">{formatInvestmentCost(state.availableCapital)}</div>
+          </div>
           <button
             onClick={openRoiMemo}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-secondary hover:bg-sn-surface-hover text-xs font-medium text-foreground transition-colors border border-border"

@@ -4,6 +4,7 @@ import TopBar from "../components/TopBar";
 import NetworkMap from "../components/NetworkMap";
 import ChatPanel from "../components/ChatPanel";
 import BuildPalette from "../components/BuildPalette";
+import CapitalTree from "../components/CapitalTree";
 import KPIPanel from "../components/KPIPanel";
 import PlantDetail from "../components/PlantDetail";
 import EndgameLeaderboard from "../components/EndgameLeaderboard";
@@ -34,7 +35,7 @@ function IndexBody() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [leaderboardShown, setLeaderboardShown] = useState(false);
-  const { tick, state } = useGameState();
+  const { tick, state, effectiveAssumptions } = useGameState();
   const previousPhaseRef = useRef(state.simulationPhase);
 
   useEffect(() => {
@@ -97,7 +98,7 @@ function IndexBody() {
                 ? "Ready to set baseline · press play to begin"
                 : state.simulationPhase === "baseline"
                 ? "Baseline set · all network plants online"
-                : `Dallas outage · ${state.assumptions.outageDurationDays}d`}
+                : `Dallas outage · ${effectiveAssumptions.outageDurationDays}d`}
             </span>
           </div>
           <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
@@ -115,6 +116,7 @@ function IndexBody() {
         <div className="flex-1 flex flex-col min-w-0 relative">
           <NetworkMap simDay={simDay} simHour={simHour} />
           <KPIPanel />
+          <CapitalTree />
           <BuildPalette />
         </div>
 

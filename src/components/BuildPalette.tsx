@@ -23,7 +23,7 @@ export default function BuildPalette() {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="absolute bottom-16 left-3 z-20 flex flex-col items-start gap-2">
+    <div className="absolute bottom-3 left-3 z-20 flex flex-col items-start gap-2">
       <AnimatePresence>
         {state.buildMode && state.pendingCatalog && (
           <motion.div

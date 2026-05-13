@@ -12,9 +12,15 @@ import {
 } from "@/lib/buildings";
 import {
   BASELINE_ASSUMPTIONS,
+  INVESTMENT_LIBRARY,
+  STARTING_INVESTMENT_CAPITAL,
+  applyInvestmentsToAssumptions,
   buildScenarioVersions,
   getBestStrategy,
+  getInvestmentRuntimeEffects,
   isSafeTask,
+  type InvestmentDefinition,
+  type InvestmentId,
   type PlanTask,
   type ResponsePlan,
   type InterventionType,
@@ -63,6 +69,8 @@ export interface GameState {
   objective: ScenarioObjective;
   activeScenarioMode: StrategyMode;
   assumptions: ScenarioAssumptions;
+  availableCapital: number;
+  purchasedInvestments: InvestmentId[];
   selectedInterventions: InterventionType[];
   simulationPhase: SimulationPhase;
   history: SimulationSnapshot[];
@@ -87,6 +95,7 @@ type Action =
   | { type: "SET_OBJECTIVE"; objective: ScenarioObjective }
   | { type: "SET_ACTIVE_SCENARIO"; mode: StrategyMode }
   | { type: "UPDATE_ASSUMPTION"; key: keyof ScenarioAssumptions; value: ScenarioAssumptions[keyof ScenarioAssumptions] }
+  | { type: "PURCHASE_INVESTMENT"; id: InvestmentId }
   | { type: "TOGGLE_INTERVENTION"; intervention: InterventionType }
   | { type: "SELECT_TASK"; id: string | null }
   | { type: "SET_PLAN_EDIT_MODE"; enabled: boolean }
@@ -138,6 +147,8 @@ function initial(): GameState {
     objective: "margin",
     activeScenarioMode: "baseline",
     assumptions: BASELINE_ASSUMPTIONS,
+    availableCapital: STARTING_INVESTMENT_CAPITAL,
+    purchasedInvestments: [],
     selectedInterventions: [],
     simulationPhase: "baseline",
     history: [],
@@ -204,8 +215,30 @@ function phaseLineStatus(phase: SimulationPhase, current: LineStatus): LineStatu
   return current;
 }
 
-function applyPhaseToBuildings(buildings: Building[], phase: SimulationPhase, strategy: StrategyMode): Building[] {
-  const incidentMitigation = strategy === "ai" ? 0.65 : strategy === "manual" ? 0.35 : 0;
+function getInvestmentUnlockState(availableCapital: number, purchasedInvestments: InvestmentId[]) {
+  const purchasedSet = new Set(purchasedInvestments);
+  return INVESTMENT_LIBRARY.map((investment) => ({
+    ...investment,
+    purchased: purchasedSet.has(investment.id),
+    available:
+      !purchasedSet.has(investment.id) &&
+      (investment.requires ? purchasedSet.has(investment.requires) : true) &&
+      availableCapital >= investment.cost,
+    locked: !purchasedSet.has(investment.id) && !!investment.requires && !purchasedSet.has(investment.requires),
+  }));
+}
+
+function applyPhaseToBuildings(
+  buildings: Building[],
+  phase: SimulationPhase,
+  strategy: StrategyMode,
+  runtimeEffects = { mitigationBonus: 0, flowMitigationBonus: 0, throughputBonus: 0 },
+): Building[] {
+  const incidentMitigation = Math.min(
+    0.92,
+    (strategy === "ai" ? 0.65 : strategy === "manual" ? 0.35 : 0) + runtimeEffects.mitigationBonus,
+  );
+  const throughputLift = runtimeEffects.throughputBonus;
 
   return buildings.map((building) => {
     if (phase === "baseline") {
@@ -260,7 +293,7 @@ function applyPhaseToBuildings(buildings: Building[], phase: SimulationPhase, st
           lines: building.lines.map((line) => ({
             ...line,
             status: phase === "steady" ? "active" as const : phaseLineStatus(phase, line.status),
-            output: Math.round(line.target * (phase === "steady" ? 0.9 : 0.68)),
+            output: Math.round(line.target * (phase === "steady" ? 0.9 + throughputLift : 0.68 + throughputLift * 0.7)),
           })),
         };
       }
@@ -278,7 +311,7 @@ function applyPhaseToBuildings(buildings: Building[], phase: SimulationPhase, st
           lines: building.lines.map((line) => ({
             ...line,
             status: line.id.endsWith("L3") ? "bottleneck" as const : phaseLineStatus("response", line.status),
-            output: Math.round(line.target * (line.id.endsWith("L3") ? 0.58 : 0.82)),
+            output: Math.round(line.target * (line.id.endsWith("L3") ? 0.58 + throughputLift * 0.35 : 0.82 + throughputLift)),
           })),
         };
       }
@@ -295,7 +328,7 @@ function applyPhaseToBuildings(buildings: Building[], phase: SimulationPhase, st
           lines: building.lines.map((line) => ({
             ...line,
             status: phase === "response" && line.id.endsWith("L3") ? "bottleneck" as const : "active" as const,
-            output: Math.round(line.target * (phase === "response" ? 0.87 + incidentMitigation * 0.05 : 0.92)),
+            output: Math.round(line.target * (phase === "response" ? 0.87 + incidentMitigation * 0.05 + throughputLift : 0.92 + throughputLift)),
           })),
         };
       }
@@ -310,7 +343,8 @@ function reducer(state: GameState, action: Action): GameState {
     case "TICK": {
       const lastTick = state.lastTick + 1;
       const simulationPhase = getSimulationPhase(lastTick);
-      const phaseBuildings = applyPhaseToBuildings(state.buildings, simulationPhase, state.activeScenarioMode);
+      const runtimeEffects = getInvestmentRuntimeEffects(state.purchasedInvestments);
+      const phaseBuildings = applyPhaseToBuildings(state.buildings, simulationPhase, state.activeScenarioMode, runtimeEffects);
       const phaseState = recomputeTotals({ ...state, buildings: phaseBuildings });
       const net = phaseState.revenuePerHr - phaseState.upkeepPerHr;
       const cash = state.cash + net;
@@ -557,6 +591,29 @@ function reducer(state: GameState, action: Action): GameState {
         },
       };
 
+    case "PURCHASE_INVESTMENT": {
+      if (state.purchasedInvestments.includes(action.id)) return state;
+      const investment = INVESTMENT_LIBRARY.find((item) => item.id === action.id);
+      if (!investment || state.availableCapital < investment.cost || state.cash < investment.cost) return state;
+      if (investment.requires && !state.purchasedInvestments.includes(investment.requires)) return state;
+
+      return {
+        ...state,
+        cash: state.cash - investment.cost,
+        availableCapital: state.availableCapital - investment.cost,
+        purchasedInvestments: [...state.purchasedInvestments, action.id],
+        events: [
+          {
+            id: nextEventId(),
+            tick: state.lastTick,
+            tone: "good",
+            text: `${investment.label} funded · ${investment.description}`,
+          },
+          ...state.events,
+        ].slice(0, 12),
+      };
+    }
+
     case "TOGGLE_INTERVENTION": {
       const selectedInterventions = state.selectedInterventions.includes(action.intervention)
         ? state.selectedInterventions.filter((item) => item !== action.intervention)
@@ -589,6 +646,22 @@ function reducer(state: GameState, action: Action): GameState {
         activeScenarioMode: state.simulationPhase === "baseline" ? "baseline" : "manual",
         selectedTaskId: state.selectedTaskId === action.id ? null : state.selectedTaskId,
         selectedInterventions,
+        events: [
+          {
+            id: nextEventId(),
+            tick: state.lastTick,
+            tone:
+              action.patch.resolution === "rejected"
+                ? "bad"
+                : action.patch.resolution === "user-approved"
+                  ? "good"
+                  : "warn",
+            text: `${action.patch.resolution === "rejected" ? "Rejected" : action.patch.resolution === "user-approved" ? "Activated" : "Adjusted"} ${
+              action.patch.interventionType ? action.patch.interventionType.replaceAll("_", " ") : "task"
+            }`,
+          },
+          ...state.events,
+        ].slice(0, 12),
         planTaskOverrides: {
           ...state.planTaskOverrides,
           [action.id]: { ...current, ...action.patch },
@@ -619,6 +692,10 @@ function reducer(state: GameState, action: Action): GameState {
         ...state,
         activeScenarioMode: state.simulationPhase === "baseline" ? "baseline" : "manual",
         selectedInterventions,
+        events: [
+          { id: nextEventId(), tick: state.lastTick, tone: "good", text: `${safeTasks.length} low-risk moves auto-executed by command center AI` },
+          ...state.events,
+        ].slice(0, 12),
         planTaskOverrides: nextOverrides,
       };
     }
@@ -653,6 +730,8 @@ interface GameStateContextValue {
   buyMachine: (id: string) => void;
   selectedBuilding: Building | null;
   catalog: CatalogItem[];
+  investments: Array<InvestmentDefinition & { purchased: boolean; available: boolean; locked: boolean }>;
+  effectiveAssumptions: ScenarioAssumptions;
   scenarios: Record<StrategyMode, ScenarioVersion>;
   currentScenario: ScenarioVersion;
   bestScenario: ScenarioVersion;
@@ -661,6 +740,7 @@ interface GameStateContextValue {
   setObjective: (objective: ScenarioObjective) => void;
   setActiveScenario: (mode: StrategyMode) => void;
   updateAssumption: <K extends keyof ScenarioAssumptions>(key: K, value: ScenarioAssumptions[K]) => void;
+  purchaseInvestment: (id: InvestmentId) => void;
   toggleIntervention: (intervention: InterventionType) => void;
   setSelectedTask: (id: string | null) => void;
   setPlanEditMode: (enabled: boolean) => void;
@@ -692,6 +772,9 @@ export function GameStateProvider({ children }: { children: ReactNode }) {
   const updateAssumption = useCallback(<K extends keyof ScenarioAssumptions,>(key: K, value: ScenarioAssumptions[K]) => {
     dispatch({ type: "UPDATE_ASSUMPTION", key, value });
   }, []);
+  const purchaseInvestment = useCallback((id: InvestmentId) => {
+    dispatch({ type: "PURCHASE_INVESTMENT", id });
+  }, []);
   const toggleIntervention = useCallback((intervention: InterventionType) => {
     dispatch({ type: "TOGGLE_INTERVENTION", intervention });
   }, []);
@@ -703,9 +786,19 @@ export function GameStateProvider({ children }: { children: ReactNode }) {
     [state.buildings, state.selectedBuildingId],
   );
 
+  const investments = useMemo(
+    () => getInvestmentUnlockState(state.availableCapital, state.purchasedInvestments),
+    [state.availableCapital, state.purchasedInvestments],
+  );
+
+  const effectiveAssumptions = useMemo(
+    () => applyInvestmentsToAssumptions(state.assumptions, state.purchasedInvestments),
+    [state.assumptions, state.purchasedInvestments],
+  );
+
   const scenarios = useMemo(
-    () => buildScenarioVersions(state.assumptions, state.selectedInterventions),
-    [state.assumptions, state.selectedInterventions],
+    () => buildScenarioVersions(effectiveAssumptions, state.selectedInterventions),
+    [effectiveAssumptions, state.selectedInterventions],
   );
 
   const currentScenario = scenarios[state.activeScenarioMode];
@@ -778,6 +871,7 @@ export function GameStateProvider({ children }: { children: ReactNode }) {
       automation: "modify",
       resolution: "open",
       interventionType: null,
+      estimatedCost: 0,
       impactSummary: "Custom task impact needs review",
       openedAtTick: state.lastTick,
       closedAtTick: null,
@@ -814,6 +908,8 @@ export function GameStateProvider({ children }: { children: ReactNode }) {
       buyMachine,
       selectedBuilding,
       catalog: BUILDING_CATALOG,
+      investments,
+      effectiveAssumptions,
       scenarios,
       currentScenario,
       bestScenario,
@@ -822,6 +918,7 @@ export function GameStateProvider({ children }: { children: ReactNode }) {
       setObjective,
       setActiveScenario,
       updateAssumption,
+      purchaseInvestment,
       toggleIntervention,
       setSelectedTask,
       setPlanEditMode,
@@ -845,6 +942,8 @@ export function GameStateProvider({ children }: { children: ReactNode }) {
       hire,
       buyMachine,
       selectedBuilding,
+      investments,
+      effectiveAssumptions,
       scenarios,
       currentScenario,
       bestScenario,
@@ -853,6 +952,7 @@ export function GameStateProvider({ children }: { children: ReactNode }) {
       setObjective,
       setActiveScenario,
       updateAssumption,
+      purchaseInvestment,
       toggleIntervention,
       setSelectedTask,
       setPlanEditMode,

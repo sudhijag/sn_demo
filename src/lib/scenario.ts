@@ -72,6 +72,7 @@ export interface PlanTask {
   automation: ActionAutomation;
   resolution: TaskResolution;
   interventionType: InterventionType | null;
+  estimatedCost: number;
   impactSummary: string;
   openedAtTick: number;
   closedAtTick: number | null;
@@ -110,6 +111,40 @@ export interface ExecutiveAnswer {
   followUps: string[];
 }
 
+export type InvestmentTrack = "logistics" | "labor" | "resilience" | "sourcing";
+export type InvestmentId =
+  | "logistics_control_tower"
+  | "logistics_priority_freight"
+  | "labor_flex_pool"
+  | "labor_cross_training"
+  | "resilience_buffer_capacity"
+  | "resilience_recovery_drills"
+  | "sourcing_alt_suppliers"
+  | "sourcing_priority_contracts";
+
+export interface InvestmentDefinition {
+  id: InvestmentId;
+  track: InvestmentTrack;
+  tier: 1 | 2;
+  cost: number;
+  label: string;
+  description: string;
+  requires?: InvestmentId;
+  assumptionDelta?: Partial<Record<keyof Pick<ScenarioAssumptions, "outageDurationDays" | "spareCapacityPct" | "laborAvailabilityPct" | "supplierLeadTimeDays">, number>>;
+  assumptionSet?: Partial<Pick<ScenarioAssumptions, "freightMode" | "serviceLevelPriority" | "skuPriority">>;
+  runtime?: {
+    mitigationBonus?: number;
+    flowMitigationBonus?: number;
+    throughputBonus?: number;
+  };
+}
+
+export interface InvestmentRuntimeEffects {
+  mitigationBonus: number;
+  flowMitigationBonus: number;
+  throughputBonus: number;
+}
+
 export const BASELINE_ASSUMPTIONS: ScenarioAssumptions = {
   outageDurationDays: 14,
   spareCapacityPct: 18,
@@ -119,6 +154,101 @@ export const BASELINE_ASSUMPTIONS: ScenarioAssumptions = {
   serviceLevelPriority: "balanced",
   skuPriority: "all",
 };
+
+export const STARTING_INVESTMENT_CAPITAL = 3_200_000;
+
+export const INVESTMENT_LIBRARY: InvestmentDefinition[] = [
+  {
+    id: "logistics_control_tower",
+    track: "logistics",
+    tier: 1,
+    cost: 450_000,
+    label: "Lane Control Tower",
+    description: "Prebuild reroute playbooks so the network can redirect volume faster when Dallas goes down.",
+    assumptionDelta: { spareCapacityPct: 2 },
+    runtime: { flowMitigationBonus: 1, mitigationBonus: 0.04 },
+  },
+  {
+    id: "logistics_priority_freight",
+    track: "logistics",
+    tier: 2,
+    cost: 680_000,
+    requires: "logistics_control_tower",
+    label: "Priority Freight Contracts",
+    description: "Lock in premium carrier access for the lanes that matter most during the response window.",
+    assumptionDelta: { supplierLeadTimeDays: -1 },
+    assumptionSet: { freightMode: "expedited" },
+    runtime: { flowMitigationBonus: 1, mitigationBonus: 0.05 },
+  },
+  {
+    id: "labor_flex_pool",
+    track: "labor",
+    tier: 1,
+    cost: 420_000,
+    label: "Flex Labor Bench",
+    description: "Maintain a reserve bench of labor that can be pulled into backup plants quickly.",
+    assumptionDelta: { laborAvailabilityPct: 6 },
+    runtime: { throughputBonus: 0.03 },
+  },
+  {
+    id: "labor_cross_training",
+    track: "labor",
+    tier: 2,
+    cost: 610_000,
+    requires: "labor_flex_pool",
+    label: "Cross-Training Program",
+    description: "Cross-train crews so Phoenix and Atlanta can absorb more work without stalling.",
+    assumptionDelta: { laborAvailabilityPct: 4, spareCapacityPct: 3 },
+    runtime: { mitigationBonus: 0.04, throughputBonus: 0.05 },
+  },
+  {
+    id: "resilience_buffer_capacity",
+    track: "resilience",
+    tier: 1,
+    cost: 480_000,
+    label: "Buffer Capacity",
+    description: "Invest in extra spare capacity so the network can take a hit without collapsing.",
+    assumptionDelta: { spareCapacityPct: 5 },
+    runtime: { mitigationBonus: 0.03, throughputBonus: 0.02 },
+  },
+  {
+    id: "resilience_recovery_drills",
+    track: "resilience",
+    tier: 2,
+    cost: 720_000,
+    requires: "resilience_buffer_capacity",
+    label: "Recovery Drills",
+    description: "Practice outage recovery so Dallas and the downstream plants recover faster under pressure.",
+    assumptionDelta: { outageDurationDays: -3 },
+    runtime: { mitigationBonus: 0.09, throughputBonus: 0.04 },
+  },
+  {
+    id: "sourcing_alt_suppliers",
+    track: "sourcing",
+    tier: 1,
+    cost: 390_000,
+    label: "Alternate Suppliers",
+    description: "Qualify secondary suppliers in advance so inbound parts arrive faster during disruption.",
+    assumptionDelta: { supplierLeadTimeDays: -2 },
+    runtime: { mitigationBonus: 0.03 },
+  },
+  {
+    id: "sourcing_priority_contracts",
+    track: "sourcing",
+    tier: 2,
+    cost: 640_000,
+    requires: "sourcing_alt_suppliers",
+    label: "Priority Allocation Contracts",
+    description: "Negotiate priority allocation on critical components so strategic product lines stay moving.",
+    assumptionDelta: { supplierLeadTimeDays: -2 },
+    assumptionSet: { skuPriority: "strategic" },
+    runtime: { mitigationBonus: 0.05, throughputBonus: 0.03 },
+  },
+];
+
+export const INVESTMENT_BY_ID = Object.fromEntries(
+  INVESTMENT_LIBRARY.map((investment) => [investment.id, investment]),
+) as Record<InvestmentId, InvestmentDefinition>;
 
 export const INTERVENTION_LIBRARY: InterventionDefinition[] = [
   {
@@ -193,6 +323,57 @@ export function formatMillions(value: number) {
 
 export function formatDeltaPct(value: number) {
   return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
+
+export function formatInvestmentCost(value: number) {
+  if (Math.abs(value) >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
+  if (Math.abs(value) >= 1_000) return `$${Math.round(value / 1_000)}K`;
+  return `$${Math.round(value)}`;
+}
+
+export function applyInvestmentsToAssumptions(
+  assumptions: ScenarioAssumptions,
+  purchasedInvestments: InvestmentId[],
+) {
+  const next: ScenarioAssumptions = { ...assumptions };
+
+  for (const id of purchasedInvestments) {
+    const investment = INVESTMENT_BY_ID[id];
+    if (!investment) continue;
+
+    if (investment.assumptionDelta?.outageDurationDays) {
+      next.outageDurationDays = Math.max(4, next.outageDurationDays + investment.assumptionDelta.outageDurationDays);
+    }
+    if (investment.assumptionDelta?.spareCapacityPct) {
+      next.spareCapacityPct = Math.min(40, Math.max(10, next.spareCapacityPct + investment.assumptionDelta.spareCapacityPct));
+    }
+    if (investment.assumptionDelta?.laborAvailabilityPct) {
+      next.laborAvailabilityPct = Math.min(100, Math.max(70, next.laborAvailabilityPct + investment.assumptionDelta.laborAvailabilityPct));
+    }
+    if (investment.assumptionDelta?.supplierLeadTimeDays) {
+      next.supplierLeadTimeDays = Math.max(5, next.supplierLeadTimeDays + investment.assumptionDelta.supplierLeadTimeDays);
+    }
+    if (investment.assumptionSet?.freightMode) next.freightMode = investment.assumptionSet.freightMode;
+    if (investment.assumptionSet?.serviceLevelPriority) next.serviceLevelPriority = investment.assumptionSet.serviceLevelPriority;
+    if (investment.assumptionSet?.skuPriority) next.skuPriority = investment.assumptionSet.skuPriority;
+  }
+
+  return next;
+}
+
+export function getInvestmentRuntimeEffects(purchasedInvestments: InvestmentId[]): InvestmentRuntimeEffects {
+  return purchasedInvestments.reduce<InvestmentRuntimeEffects>(
+    (acc, id) => {
+      const runtime = INVESTMENT_BY_ID[id]?.runtime;
+      if (!runtime) return acc;
+      return {
+        mitigationBonus: acc.mitigationBonus + (runtime.mitigationBonus ?? 0),
+        flowMitigationBonus: acc.flowMitigationBonus + (runtime.flowMitigationBonus ?? 0),
+        throughputBonus: acc.throughputBonus + (runtime.throughputBonus ?? 0),
+      };
+    },
+    { mitigationBonus: 0, flowMitigationBonus: 0, throughputBonus: 0 },
+  );
 }
 
 export function getChangedAssumptions(assumptions: ScenarioAssumptions) {
@@ -457,6 +638,7 @@ function buildPlanTask(
     owner: template.owner,
     priority: template.priority,
     confidenceBand: template.confidenceBand,
+    estimatedCost: interventionByType[type].estimatedCost,
     impactSummary: getImpactSummary(type),
     openedAtTick,
     closedAtTick: controls.resolution === "auto-approved" ? openedAtTick : null,
@@ -496,6 +678,7 @@ export function buildResponsePlan(
           threshold: "L",
           automation: "modify",
           resolution: "open",
+          estimatedCost: 0,
           impactSummary: "Reference case only",
           openedAtTick,
           closedAtTick: null,
