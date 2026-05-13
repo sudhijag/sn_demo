@@ -33,6 +33,15 @@ export interface GameEvent {
 
 export type SimulationPhase = "baseline" | "incident" | "response" | "recovery" | "steady";
 
+export interface SimulationSnapshot {
+  tick: number;
+  phase: SimulationPhase;
+  profitPerHr: number;
+  downtimePct: number;
+  throughputUnits: number;
+  cash: number;
+}
+
 export interface GameState {
   cash: number;
   rawInventory: number; // tonnes
@@ -56,6 +65,7 @@ export interface GameState {
   assumptions: ScenarioAssumptions;
   selectedInterventions: InterventionType[];
   simulationPhase: SimulationPhase;
+  history: SimulationSnapshot[];
   selectedTaskId: string | null;
   planEditMode: boolean;
   planTaskOverrides: Record<string, Partial<PlanTask>>;
@@ -85,8 +95,26 @@ type Action =
   | { type: "ADD_PLAN_TASK"; task: PlanTask }
   | { type: "REMOVE_PLAN_TASK"; id: string };
 
-function initial(): GameState {
+function buildSnapshot(state: Pick<GameState, "lastTick" | "simulationPhase" | "revenuePerHr" | "upkeepPerHr" | "buildings" | "cash">): SimulationSnapshot {
+  const totalLines = state.buildings.reduce((sum, building) => sum + building.lines.length, 0);
+  const disruptedLines = state.buildings.reduce(
+    (sum, building) => sum + building.lines.filter((line) => line.status === "idle" || line.status === "maintenance" || line.status === "bottleneck").length,
+    0,
+  );
+  const throughputUnits = state.buildings.reduce((sum, building) => sum + building.lines.reduce((lineSum, line) => lineSum + line.output, 0), 0);
+
   return {
+    tick: state.lastTick,
+    phase: state.simulationPhase,
+    profitPerHr: state.revenuePerHr - state.upkeepPerHr,
+    downtimePct: totalLines === 0 ? 0 : Number(((disruptedLines / totalLines) * 100).toFixed(1)),
+    throughputUnits,
+    cash: state.cash,
+  };
+}
+
+function initial(): GameState {
+  const baseState: GameState = {
     cash: 24_800_000,
     rawInventory: 340,
     rawCapacity: 500,
@@ -112,11 +140,17 @@ function initial(): GameState {
     assumptions: BASELINE_ASSUMPTIONS,
     selectedInterventions: [],
     simulationPhase: "baseline",
+    history: [],
     selectedTaskId: null,
     planEditMode: false,
     planTaskOverrides: {},
     addedPlanTasks: [],
     removedTaskIds: [],
+  };
+
+  return {
+    ...baseState,
+    history: [buildSnapshot(baseState)],
   };
 }
 
@@ -313,7 +347,7 @@ function reducer(state: GameState, action: Action): GameState {
       }
       if (events.length > 12) events.length = 12;
 
-      return {
+      const nextState = {
         ...phaseState,
         cash,
         rawInventory,
@@ -325,6 +359,11 @@ function reducer(state: GameState, action: Action): GameState {
         lastTick,
         simulationPhase,
         activeScenarioMode: simulationPhase === "baseline" ? "baseline" : state.activeScenarioMode,
+      };
+
+      return {
+        ...nextState,
+        history: [...state.history, buildSnapshot(nextState)].slice(-24),
       };
     }
 

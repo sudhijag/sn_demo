@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useGameState } from "@/lib/game-state";
 import { formatMillions, type ScenarioOutcome, type StrategyMode } from "@/lib/scenario";
 import { SIM_TICK_MS } from "@/lib/sim-config";
+import ROIMemoModal from "./ROIMemoModal";
 
 function DeltaGlyph({ direction }: { direction: "up" | "down" }) {
   return (
@@ -54,6 +55,7 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
   const { state, scenarios, currentScenario, activeResponsePlan } = useGameState();
   const baseline = scenarios.baseline;
   const [visualQuarter, setVisualQuarter] = useState(0);
+  const [roiModalOpen, setRoiModalOpen] = useState(false);
   const progressPct = Math.min(100, (state.lastTick / 12) * 100);
   const phaseOrder = ["baseline", "incident", "response", "recovery", "steady"];
   const activePhaseIndex = phaseOrder.indexOf(state.simulationPhase);
@@ -126,9 +128,23 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
     },
   ];
 
+  const openRoiMemo = () => {
+    const blob = new Blob([""], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "roi-memo-sheet.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setRoiModalOpen(true);
+  };
+
   return (
-    <div className="flex items-center gap-6 px-5 py-3 border-b border-border bg-card/60 backdrop-blur-sm">
-      <div className="flex flex-col items-center pr-5 border-r border-border">
+    <>
+      <div className="flex items-center gap-6 px-5 py-3 border-b border-border bg-card/60 backdrop-blur-sm">
+        <div className="flex flex-col items-center pr-5 border-r border-border">
         <motion.div
           className="text-lg font-mono font-bold text-primary text-glow tabular-nums"
           key={`${simDay}-${simHour}`}
@@ -137,9 +153,9 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
         >
           DAY {simDay}, {String(simHour).padStart(2, "0")}:{visualMinutes}
         </motion.div>
-      </div>
+        </div>
 
-      <div className="flex items-center gap-3 flex-1 min-w-0">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
         <button
           onClick={onTogglePlay}
           className="w-7 h-7 flex items-center justify-center rounded-md border border-border bg-secondary hover:bg-sn-surface-hover transition-colors"
@@ -196,9 +212,9 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
             })}
           </div>
         </div>
-      </div>
+        </div>
 
-      <div className="flex items-center gap-4 border-l border-border pl-5">
+        <div className="flex items-center gap-4 border-l border-border pl-5">
         {plMetrics.map((m) => (
           <div key={m.label} className="min-w-[124px]">
             <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{m.label}</div>
@@ -226,18 +242,23 @@ export default function TopBar({ simDay, simHour, isPlaying, onTogglePlay }: { s
             </div>
           </div>
         ))}
-      </div>
+        </div>
 
-      <div className="flex items-center gap-2 border-l border-border pl-5">
-        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-secondary hover:bg-sn-surface-hover text-xs font-medium text-foreground transition-colors border border-border">
+        <div className="flex items-center gap-2 border-l border-border pl-5">
+          <button
+            onClick={openRoiMemo}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-secondary hover:bg-sn-surface-hover text-xs font-medium text-foreground transition-colors border border-border"
+          >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
             <polyline points="7 10 12 15 17 10" />
             <line x1="12" y1="15" x2="12" y2="3" />
           </svg>
-          Export
-        </button>
+            ROI Memo
+          </button>
+        </div>
       </div>
-    </div>
+      <ROIMemoModal open={roiModalOpen} onOpenChange={setRoiModalOpen} />
+    </>
   );
 }

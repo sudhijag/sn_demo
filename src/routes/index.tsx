@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import TopBar from "../components/TopBar";
 import NetworkMap from "../components/NetworkMap";
@@ -34,6 +34,7 @@ function IndexBody() {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [leaderboardShown, setLeaderboardShown] = useState(false);
   const { tick, state } = useGameState();
+  const previousPhaseRef = useRef(state.simulationPhase);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -49,6 +50,14 @@ function IndexBody() {
     }, SIM_TICK_MS);
     return () => clearInterval(interval);
   }, [isPlaying, tick]);
+
+  useEffect(() => {
+    const previousPhase = previousPhaseRef.current;
+    previousPhaseRef.current = state.simulationPhase;
+    if (previousPhase === state.simulationPhase) return;
+
+    setIsPlaying(false);
+  }, [state.simulationPhase]);
 
   useEffect(() => {
     if (state.simulationPhase !== "steady" || leaderboardShown) return;

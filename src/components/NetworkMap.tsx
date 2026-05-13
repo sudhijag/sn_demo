@@ -210,8 +210,8 @@ const projection = geoAlbers()
   .rotate([96, 0])
   .center([-0.6, 38.7])
   .parallels([29.5, 45.5])
-  .scale(900)
-  .translate([475, 230]);
+  .scale(980)
+  .translate([520, 250]);
 
 interface NetworkMapProps {
   simDay: number;
@@ -274,8 +274,8 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
     const rect = svg.getBoundingClientRect();
     const xPct = (e.clientX - rect.left) / rect.width;
     const yPct = (e.clientY - rect.top) / rect.height;
-    const svgX = xPct * 950;
-    const svgY = yPct * 460;
+    const svgX = xPct * 1040;
+    const svgY = yPct * 500;
     const geo = (projection as unknown as { invert?: (pt: [number, number]) => [number, number] | null }).invert?.([svgX, svgY]);
     if (!geo) return;
     placeBuilding(geo);
@@ -335,12 +335,12 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
       </div>
 
       {/* Map */}
-      <div className="flex-1 flex items-center justify-center p-4 pt-12 overflow-hidden">
-        <div className="w-full h-full max-h-[560px] relative">
+      <div className="flex-1 flex items-center justify-center p-3 pt-10 overflow-hidden">
+        <div className="w-full h-full max-h-[620px] relative">
           <ComposableMap
             projection={projection as never}
-            width={950}
-            height={460}
+            width={1040}
+            height={500}
             style={{ width: "100%", height: "100%" }}
           >
             <Geographies geography={COUNTRIES_URL}>
@@ -455,8 +455,8 @@ export default function NetworkMap({ simDay, simHour = 0 }: NetworkMapProps) {
               <div
                 className="absolute pointer-events-none card-surface p-2 text-center text-[10px] glow-green-sm"
                 style={{
-                  left: `${(pos.x / 950) * 100}%`,
-                  top: `${(pos.y / 460) * 100}%`,
+                  left: `${(pos.x / 1040) * 100}%`,
+                  top: `${(pos.y / 500) * 100}%`,
                   transform: "translate(-50%, calc(-100% - 30px))",
                   width: 180,
                 }}
